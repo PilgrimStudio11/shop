@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админ-панель - FLOWWOW</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Дополнительные стили для админки */
+        :root {
+            --sidebar-width: 280px;
+            --header-height: 70px;
+        }
+        
+        .admin-layout {
+            display: flex;
+            min-height: 100vh;
+            background: #f5f7fa;
+        }
+        
+        .admin-sidebar {
+            width: var(--sidebar-width);
+            background: white;
+            box-shadow: var(--shadow);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .admin-logo {
+            padding: 25px;
+            border-bottom: 1px solid var(--gray-light);
+        }
+        
+        .admin-nav {
+            flex: 1;
+            padding: 20px 0;
+            overflow-y: auto;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px 25px;
+            color: var(--gray);
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 4px solid transparent;
+        }
+        
+        .nav-item:hover {
+            background: rgba(255, 107, 139, 0.05);
+            color: var(--primary);
+        }
+        
+        .nav-item.active {
+            background: rgba(255, 107, 139, 0.1);
+            color: var(--primary);
+            border-left-color: var(--primary);
+        }
+        
+        .nav-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 18px;
+        }
+        
+        .admin-main {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 30px;
+        }
+        
+        .admin-header {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: var(--shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: 25px;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+        }
+        
+        .stat-icon.primary { background: var(--primary); }
+        .stat-icon.success { background: var(--success); }
+        .stat-icon.warning { background: var(--warning); }
+        .stat-icon.info { background: var(--info); }
+        
+        .stat-content {
+            flex: 1;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: var(--gray);
+            font-size: 14px;
+        }
+        
+        .admin-table-container {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: 25px;
+            box-shadow: var(--shadow);
+            margin-bottom: 30px;
+        }
+        
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .table-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--dark);
+        }
+        
+        .table-search {
+            padding: 10px 15px;
+            border: 2px solid var(--gray-light);
+            border-radius: var(--radius);
+            min-width: 250px;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th {
+            text-align: left;
+            padding: 15px;
+            border-bottom: 2px solid var(--gray-light);
+            font-weight: 600;
+            color: var(--gray);
+            font-size: 14px;
+        }
+        
+        .table td {
+            padding: 15px;
+            border-bottom: 1px solid var(--gray-light);
+            vertical-align: middle;
+        }
+        
+        .table tr:hover {
+            background: rgba(255, 107, 139, 0.02);
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .action-btn {
+            width: 35px;
+            height: 35px;
+            border: none;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .edit-btn {
+            background: rgba(var(--info-rgb), 0.1);
+            color: var(--info);
+        }
+        
+        .edit-btn:hover {
+            background: var(--info);
+            color: white;
+        }
+        
+        .delete-btn {
+            background: rgba(var(--danger-rgb), 0.1);
+            color: var(--danger);
+        }
+        
+        .delete-btn:hover {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .view-btn {
+            background: rgba(var(--success-rgb), 0.1);
+            color: var(--success);
+        }
+        
+        .view-btn:hover {
+            background: var(--success);
+            color: white;
+        }
+        
+        .form-modal {
+            max-width: 600px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .chat-admin {
+            display: flex;
+            gap: 30px;
+            height: calc(100vh - 200px);
+        }
+        
+        .chat-list {
+            width: 350px;
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .chat-item {
+            padding: 15px;
+            border-radius: var(--radius);
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .chat-item:hover {
+            background: rgba(255, 107, 139, 0.05);
+        }
+        
+        .chat-item.active {
+            background: rgba(255, 107, 139, 0.1);
+            border: 2px solid var(--primary);
+        }
+        
+        .chat-detail {
+            flex: 1;
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-messages-admin {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        
+        .logout-btn {
+            background: var(--danger);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+        
+        @media (max-width: 1024px) {
+            .admin-layout {
+                flex-direction: column;
+            }
+            
+            .admin-sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+            
+            .admin-nav {
+                display: flex;
+                overflow-x: auto;
+                padding: 15px;
+            }
+            
+            .nav-item {
+                flex-direction: column;
+                padding: 10px;
+                min-width: 100px;
+            }
+            
+            .admin-main {
+                margin-left: 0;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .chat-admin {
+                flex-direction: column;
+                height: auto;
+            }
+            
+            .chat-list {
+                width: 100%;
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Вход в админку -->
+    <div class="modal active" id="adminLoginModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Вход в админ-панель</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Логин</label>
+                    <input type="text" id="adminLogin" class="form-control" placeholder="Введите логин">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Пароль</label>
+                    <input type="password" id="adminPassword" class="form-control" placeholder="Введите пароль">
+                </div>
+                <button class="btn btn-primary btn-block" onclick="adminLogin()">Войти</button>
+                <p class="text-center mt-2" style="color: var(--gray); font-size: 14px;">
+                    Логин: admin<br>Пароль: admin123
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Основной интерфейс админки (скрыт до входа) -->
+    <div class="admin-layout" id="adminInterface" style="display: none;">
+        <!-- Сайдбар -->
+        <div class="admin-sidebar">
+            <div class="admin-logo">
+                <h2 style="color: var(--primary);">
+                    <i class="fas fa-crown"></i> FLOWWOW Админ
+                </h2>
+            </div>
+            
+            <div class="admin-nav">
+                <a href="#" class="nav-item active" onclick="showSection('dashboard')">
+                    <i class="fas fa-tachometer-alt nav-icon"></i>
+                    <span>Дашборд</span>
+                </a>
+                <a href="#" class="nav-item" onclick="showSection('products')">
+                    <i class="fas fa-shopping-bag nav-icon"></i>
+                    <span>Товары</span>
+                </a>
+                <a href="#" class="nav-item" onclick="showSection('orders')">
+                    <i class="fas fa-box nav-icon"></i>
+                    <span>Заказы</span>
+                    <span class="cart-count" id="ordersCount">0</span>
+                </a>
+                <a href="#" class="nav-item" onclick="showSection('categories')">
+                    <i class="fas fa-tags nav-icon"></i>
+                    <span>Категории</span>
+                </a>
+                <a href="#" class="nav-item" onclick="showSection('customers')">
+                    <i class="fas fa-users nav-icon"></i>
+                    <span>Клиенты</span>
+                </a>
+                <a href="#" class="nav-item" onclick="showSection('chat')">
+                    <i class="fas fa-comments nav-icon"></i>
+                    <span>Чат поддержки</span>
+                    <span class="cart-count" id="unreadChats">0</span>
+                </a>
+                <a href="#" class="nav-item" onclick="showSection('settings')">
+                    <i class="fas fa-cog nav-icon"></i>
+                    <span>Настройки</span>
+                </a>
+            </div>
+            
+            <div style="padding: 25px; border-top: 1px solid var(--gray-light);">
+                <button class="logout-btn" onclick="adminLogout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Выйти
+                </button>
+            </div>
+        </div>
+        
+        <!-- Основной контент -->
+        <div class="admin-main">
+            <!-- Дашборд -->
+            <div class="admin-section" id="dashboardSection">
+                <div class="admin-header">
+                    <h1 class="modal-title">Дашборд</h1>
+                    <div style="color: var(--gray);">
+                        <i class="fas fa-calendar"></i>
+                        <span id="currentDate"></span>
+                    </div>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="fas fa-shopping-cart"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalOrders">0</div>
+                            <div class="stat-label">Всего заказов</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon success">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalRevenue">0 ₽</div>
+                            <div class="stat-label">Общая выручка</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon warning">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalCustomers">0</div>
+                            <div class="stat-label">Клиентов</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon info">
+                            <i class="fas fa-box-open"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalProducts">0</div>
+                            <div class="stat-label">Товаров</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-table-container">
+                    <div class="table-header">
+                        <h3 class="table-title">Последние заказы</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table" id="recentOrdersTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Клиент</th>
+                                    <th>Дата</th>
+                                    <th>Сумма</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentOrdersBody">
+                                <!-- Заполнится через JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Товары -->
+            <div class="admin-section" id="productsSection" style="display: none;">
+                <div class="admin-header">
+                    <h1 class="modal-title">Управление товарами</h1>
+                    <button class="btn btn-primary" onclick="showProductForm()">
+                        <i class="fas fa-plus"></i> Добавить товар
+                    </button>
+                </div>
+                
+                <div class="admin-table-container">
+                    <div class="table-header">
+                        <h3 class="table-title">Все товары</h3>
+                        <input type="text" class="table-search" placeholder="Поиск товаров..." onkeyup="searchProductsAdmin(this.value)">
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Изображение</th>
+                                    <th>Название</th>
+                                    <th>Категория</th>
+                                    <th>Цена</th>
+                                    <th>Остаток</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsTableBody">
+                                <!-- Заполнится через JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Заказы -->
+            <div class="admin-section" id="ordersSection" style="display: none;">
+                <div class="admin-header">
+                    <h1 class="modal-title">Управление заказами</h1>
+                    <div class="action-buttons">
+                        <select class="form-control" style="width: auto;" onchange="filterOrders(this.value)">
+                            <option value="all">Все заказы</option>
+                            <option value="new">Новые</option>
+                            <option value="processing">В обработке</option>
+                            <option value="delivered">Доставленные</option>
+                            <option value="cancelled">Отмененные</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="admin-table-container">
+                    <div class="table-header">
+                        <h3 class="table-title">Заказы</h3>
+                        <input type="text" class="table-search" placeholder="Поиск заказов..." onkeyup="searchOrders(this.value)">
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>№</th>
+                                    <th>Клиент</th>
+                                    <th>Телефон</th>
+                                    <th>Адрес</th>
+                                    <th>Сумма</th>
+                                    <th>Статус</th>
+                                    <th>Дата</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ordersTableBody">
+                                <!-- Заполнится через JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Категории -->
+            <div class="admin-section" id="categoriesSection" style="display: none;">
+                <div class="admin-header">
+                    <h1 class="modal-title">Управление категориями</h1>
+                    <button class="btn btn-primary" onclick="showCategoryForm()">
+                        <i class="fas fa-plus"></i> Добавить категорию
+                    </button>
+                </div>
+                
+                <div class="stats-grid" id="categoriesGrid">
+                    <!-- Категории будут здесь -->
+                </div>
+            </div>
+            
+            <!-- Клиенты -->
+            <div class="admin-section" id="customersSection" style="display: none;">
+                <div class="admin-header">
+                    <h1 class="modal-title">Управление клиентами</h1>
+                </div>
+                
+                <div class="admin-table-container">
+                    <div class="table-header">
+                        <h3 class="table-title">Клиенты</h3>
+                        <input type="text" class="table-search" placeholder="Поиск клиентов..." onkeyup="searchCustomers(this.value)">
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Имя</th>
+                                    <th>Email</th>
+                                    <th>Телефон</th>
+                                    <th>Заказов</th>
+                                    <th>Сумма</th>
+                                    <th>Дата регистрации</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="customersTableBody">
+                                <!-- Заполнится через JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Чат поддержки -->
+            <div class="admin-section" id="chatSection" style="display: none;">
+                <div class="admin-header">
+                    <h1 class="modal-title">Чат поддержки</h1>
+                </div>
+                
+                <div class="chat-admin">
+                    <div class="chat-list" id="chatList">
+                        <!-- Список чатов -->
+                    </div>
+                    <div class="chat-detail" id="chatDetail">
+                        <!-- Детали чата -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Настройки -->
+            <div class="admin-section" id="settingsSection" style="display: none;">
+                <div class="admin-header">
+                    <h1 class="modal-title">Настройки магазина</h1>
+                </div>
+                
+                <div class="admin-table-container">
+                    <form id="settingsForm">
+                        <div class="form-group">
+                            <label class="form-label">Название магазина</label>
+                            <input type="text" class="form-control" name="shopName" value="FLOWWOW">
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Телефон поддержки</label>
+                                <input type="text" class="form-control" name="supportPhone" value="8 (800) 123-45-67">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Email для уведомлений</label>
+                                <input type="email" class="form-control" name="notificationEmail" value="admin@flowwow.ru">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Время работы</label>
+                            <input type="text" class="form-control" name="workingHours" value="9:00-21:00, ежедневно">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Минимальная сумма заказа</label>
+                            <input type="number" class="form-control" name="minOrderAmount" value="1000">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Стоимость доставки</label>
+                            <input type="number" class="form-control" name="deliveryCost" value="300">
+                        </div>
+                        
+                        <button type="button" class="btn btn-primary" onclick="saveSettings()">
+                            <i class="fas fa-save"></i> Сохранить настройки
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальные окна для форм -->
+    <div class="modal" id="productModal">
+        <div class="modal-content form-modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="productModalTitle">Добавить товар</h3>
+                <button class="close-modal" onclick="closeModal('productModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="productForm">
+                    <div class="form-group">
+                        <label class="form-label">Название товара</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Описание</label>
+                        <textarea class="form-control" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Цена (₽)</label>
+                            <input type="number" class="form-control" name="price" required min="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Старая цена (₽)</label>
+                            <input type="number" class="form-control" name="oldPrice" min="0" step="0.01">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Категория</label>
+                            <select class="form-control" name="category" id="categorySelect">
+                                <!-- Заполнится через JS -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Количество на складе</label>
+                            <input type="number" class="form-control" name="stock" value="10" min="0">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Изображение (URL)</label>
+                        <input type="text" class="form-control" name="image" placeholder="https://example.com/image.jpg">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Статус</label>
+                        <div style="display: flex; gap: 20px;">
+                            <label>
+                                <input type="radio" name="status" value="active" checked> Активен
+                            </label>
+                            <label>
+                                <input type="radio" name="status" value="inactive"> Неактивен
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" name="isFeatured"> Отображать в "Популярные"
+                        </label>
+                        <label class="form-label">
+                            <input type="checkbox" name="onSale"> Отображать в "Акции"
+                        </label>
+                    </div>
+                    
+                    <input type="hidden" name="id">
+                    
+                    <div class="form-group">
+                        <button type="button" class="btn btn-primary btn-block" onclick="saveProduct()">
+                            Сохранить товар
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="categoryModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="categoryModalTitle">Добавить категорию</h3>
+                <button class="close-modal" onclick="closeModal('categoryModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="categoryForm">
+                    <div class="form-group">
+                        <label class="form-label">Название категории</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Описание</label>
+                        <input type="text" class="form-control" name="description">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Иконка (Font Awesome класс)</label>
+                        <input type="text" class="form-control" name="icon" placeholder="fas fa-tag">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Цвет</label>
+                        <input type="color" class="form-control" name="color" value="#ff6b8b">
+                    </div>
+                    
+                    <input type="hidden" name="id">
+                    
+                    <button type="button" class="btn btn-primary btn-block" onclick="saveCategory()">
+                        Сохранить категорию
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="orderDetailModal">
+        <div class="modal-content form-modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Заказ #<span id="orderNumber"></span></h3>
+                <button class="close-modal" onclick="closeModal('orderDetailModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="orderDetailContent">
+                    <!-- Заполнится через JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
