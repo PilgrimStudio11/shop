@@ -116,6 +116,7 @@
     const MODULE_HARVESTER_COST = 50000;
     const DOCK_COST = 100;
     const DOCK_DURATION_MS = 24 * 60 * 60 * 1000;
+    const MAX_OFFLINE_HOURS = 12; // максимум симуляции 12 часов
 
     const GOODS = [
         { id: "gold", name: "Золото", baseBuy: 100, baseSell: 100, spread: 30, cargoSpace: 1, rocket: false },
@@ -193,15 +194,19 @@
     }
     function getLevelFromWins(wins) { return Math.floor(wins / 7) + 1; }
 
-    // НОВАЯ ФУНКЦИЯ РАСЧЁТА СИЛЫ С УЧЁТОМ ПРОЧНОСТИ
     function getEffectivePower(entity) {
         let ship = getShip(entity.shipLevel);
         let basePower = ship.power;
         let rocketBonus = (entity.cargo.rockets || 0) * 0.5;
-        let tmBonus = (entity.darkMatter || 0) * 0.01;   // 1 ТМ = 0.01 силы (было /10000)
+        let tmBonus = (entity.darkMatter || 0) * 0.01;
         let rawPower = basePower + rocketBonus + tmBonus;
         let hullFactor = Math.max(0, entity.hull) / 100;
         return rawPower * hullFactor;
+    }
+
+    function formatPower(power) {
+        let fixed = power.toFixed(2);
+        return fixed.replace(/\.?0+$/, '');
     }
 
     function saveGame() {
@@ -338,7 +343,7 @@
         let ship = getShip(player.shipLevel);
         document.getElementById("shipName").innerText = ship.name;
         let effectivePower = getEffectivePower(player);
-        document.getElementById("powerVal").innerText = effectivePower.toFixed(4);
+        document.getElementById("powerVal").innerText = formatPower(effectivePower);
         document.getElementById("hullVal").innerText = Math.floor(player.hull);
         document.getElementById("creditsVal").innerText = Math.floor(player.credits);
         document.getElementById("fuelVal").innerText = player.fuel;
@@ -628,8 +633,8 @@
         let immunityActive = (Date.now() < player.immunityUntil);
         let immunityMsg = immunityActive ? "🛡️ Иммунитет активен! Боты не атакуют вас." : "";
         let modal = document.createElement("div"); modal.className = "modal";
-        modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${getEffectivePower(bot).toFixed(4)}</p>
-        <p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>📦 Груз бота: ${botCargoStr}</p><p>Ваша сила: ${getEffectivePower(player).toFixed(4)}</p><p>${immunityMsg}</p>
+        modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${formatPower(getEffectivePower(bot))}</p>
+        <p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>📦 Груз бота: ${botCargoStr}</p><p>Ваша сила: ${formatPower(getEffectivePower(player))}</p><p>${immunityMsg}</p>
         <div class="modal-buttons"><button id="attackBtn">⚔️ АТАКОВАТЬ</button><button id="retreatBtn">🏃 ОТСТУПИТЬ</button></div></div>`;
         document.body.appendChild(modal);
         modal.querySelector("#attackBtn").onclick = () => { modal.remove(); fightWithBot(bot); };
@@ -645,8 +650,7 @@
         if (winner === attacker) {
             let rockets = attacker.cargo.rockets || 0;
             let rocketPower = rockets * 0.5;
-            let tmPower = attacker.darkMatter * 0.01; // 1 ТМ = 0.01 силы, но уже учтено в getEffectivePower? Здесь используем сырые бонусы для расчёта урона
-            // Для упрощения оставим как было, но умножим на hullFactor позже
+            let tmPower = attacker.darkMatter * 0.01;
             let usedRockets = 0, usedTM = 0, hullDamage = 0;
             if (rocketPower >= diff) { usedRockets = Math.ceil(diff / 0.5); attacker.cargo.rockets -= usedRockets; diff = 0; }
             else { usedRockets = rockets; diff -= rocketPower; attacker.cargo.rockets = 0;
@@ -820,9 +824,13 @@
         }
         saveGame();
     }
+
+    // Симуляция пропущенного времени (до 12 часов)
     function simulateTimePassed(ms) {
         if (ms <= 0) return;
-        let steps = Math.min(Math.floor(ms / 10000), 1000);
+        let maxMs = MAX_OFFLINE_HOURS * 60 * 60 * 1000;
+        if (ms > maxMs) ms = maxMs;
+        let steps = Math.min(Math.floor(ms / 10000), 5000);
         for (let i = 0; i < steps; i++) {
             for (let bot of bots) {
                 let dir = Math.random() < 0.5 ? -1 : 1;
@@ -900,22 +908,74 @@
 
     // ------------------- РЕЙТИНГ -------------------
     function updateRanking() {
-        let all = [{ name: "⭐ ВЫ", level: player.level, power: getEffectivePower(player), wins: player.wins }, ...bots.map(b => ({ name: b.name, level: b.level, power: getEffectivePower(b), wins: b.wins }))];
+        let all = [
+            { name: "⭐ ВЫ", level: player.level, power: getEffectivePower(player), wins: player.wins },
+            ...bots.map(b => ({ name: b.name, level: b.level, power: getEffectivePower(b), wins: b.wins }))
+        ];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表格<thead><tr><th>Пилот</th><th>Уровень</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
-        all.forEach(p => { html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`; });
-        html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
+        let html = `表格
+            <thead>
+                <tr><th>Пилот</th><th>Уровень</th><th>Сила</th><th>Победы</th>养老
+            </thead>
+            <tbody>`;
+        all.forEach(p => {
+            html += `运转
+                <td>${p.name}运转
+                <td>${p.level}运转
+                <td>${formatPower(p.power)}运转
+                <td>${p.wins}运转
+            </tr>`;
+        });
+        html += `</tbody>${'</table>'}<p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
     }
 
     // ------------------- ЭКСПОРТ/ИМПОРТ -------------------
-    function exportSave() { let saveData = localStorage.getItem("starNomadFull"); if (!saveData) { alert("Нет сохранения для экспорта."); return; } let blob = new Blob([saveData], {type: "application/json"}); let url = URL.createObjectURL(blob); let a = document.createElement("a"); a.href = url; a.download = "star_nomad_save.json"; a.click(); URL.revokeObjectURL(url); alert("Сохранение экспортировано в файл star_nomad_save.json"); }
-    function importSave() { let input = document.createElement("input"); input.type = "file"; input.accept = "application/json"; input.onchange = (e) => { let file = e.target.files[0]; if (!file) return; let reader = new FileReader(); reader.onload = (ev) => { try { let data = JSON.parse(ev.target.result); localStorage.setItem("starNomadFull", JSON.stringify(data)); alert("Сохранение импортировано. Перезагрузите страницу для применения."); location.reload(); } catch (err) { alert("Ошибка при импорте: неверный формат файла."); } }; reader.readAsText(file); }; input.click(); }
+    function exportSave() {
+        let saveData = localStorage.getItem("starNomadFull");
+        if (!saveData) { alert("Нет сохранения для экспорта."); return; }
+        let blob = new Blob([saveData], {type: "application/json"});
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement("a");
+        a.href = url;
+        a.download = "star_nomad_save.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        alert("Сохранение экспортировано в файл star_nomad_save.json");
+    }
+    function importSave() {
+        let input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json";
+        input.onchange = (e) => {
+            let file = e.target.files[0];
+            if (!file) return;
+            let reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    let data = JSON.parse(ev.target.result);
+                    localStorage.setItem("starNomadFull", JSON.stringify(data));
+                    alert("Сохранение импортировано. Перезагрузите страницу для применения.");
+                    location.reload();
+                } catch (err) {
+                    alert("Ошибка при импорте: неверный формат файла.");
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
 
     // ------------------- ЗАПУСК -------------------
     function startGame() {
-        const now = Date.now(); const elapsed = now - lastSessionTimestamp;
-        if (elapsed > 0 && elapsed < 2*60*60*1000) { addLogToGame(`⏳ Прошло ${Math.floor(elapsed/1000)} секунд. Обновляю мир...`, "normal"); simulateTimePassed(elapsed); }
+        const now = Date.now();
+        const elapsed = now - lastSessionTimestamp;
+        if (elapsed > 0) {
+            let hours = Math.floor(elapsed / (60*60*1000));
+            if (hours > MAX_OFFLINE_HOURS) hours = MAX_OFFLINE_HOURS;
+            addLogToGame(`⏳ Прошло ${hours} ч ${Math.floor((elapsed % (60*60*1000)) / (60*1000))} мин. Обновляю мир...`, "normal");
+            simulateTimePassed(elapsed);
+        }
         lastSessionTimestamp = now; saveGame();
         document.getElementById("menuScreen").style.display = "none";
         document.getElementById("gameScreen").classList.remove("hidden");
@@ -940,7 +1000,7 @@
     window.onload = () => {
         if (!loadGame()) resetWorldAndNewPlayer();
         const now = Date.now(); const elapsed = now - lastSessionTimestamp;
-        if (elapsed > 0 && elapsed < 2*60*60*1000) simulateTimePassed(elapsed);
+        if (elapsed > 0 && elapsed < MAX_OFFLINE_HOURS*60*60*1000) simulateTimePassed(elapsed);
         lastSessionTimestamp = now; saveGame();
         document.getElementById("continueBtn").disabled = player.isDead;
         document.getElementById("newGameBtn").disabled = !player.isDead;
@@ -981,6 +1041,9 @@
         updateRanking();
         setInterval(() => { let rankingPanel = document.getElementById("rankingPanel"); if (rankingPanel && !rankingPanel.classList.contains("hidden")) updateRanking(); }, 10000);
         if (!currentMission && !missionCompleted) generateMission();
+
+        // Автосохранение перед закрытием
+        window.addEventListener("beforeunload", () => saveGame());
     };
 </script>
 </body>
