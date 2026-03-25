@@ -611,7 +611,7 @@
     function getTotalPower(entity) {
         let ship = getShip(entity.shipLevel);
         let rocketBonus = (entity.cargo.rockets || 0) * 0.5;
-        let tmBonus = (entity.darkMatter || 0) / 10000;
+        let tmBonus = (entity.darkMatter || 0) / 100;  // 1 ТМ = 0.01 силы
         let effective = ship.power + rocketBonus + tmBonus;
         let hullPercent = Math.max(0, entity.hull) / 100;
         return effective * hullPercent;
@@ -679,7 +679,7 @@
         for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === botId) { planetOwners[i] = null; planetModules[i] = { teleport: false, tmGenerator: false }; planetIncome[i] = 0; planetTM[i] = 0; }
     }
 
-    // --- Боевая система (без изменений) ---
+    // --- Боевая система (с учётом исправленной силы ТМ) ---
     function resolveCombat(attacker, defender, isPlayerAttacker) {
         let powerA = getTotalPower(attacker);
         let powerB = getTotalPower(defender);
@@ -695,8 +695,8 @@
             else { usedRockets = winner.cargo.rockets; remainingDiff -= rocketPower; winner.cargo.rockets = 0; }
         }
         if (remainingDiff > 0 && winner.darkMatter) {
-            let tmPower = (winner.darkMatter || 0) / 10000;
-            if (tmPower >= remainingDiff) { usedTM = remainingDiff * 10000; winner.darkMatter -= usedTM; remainingDiff = 0; }
+            let tmPower = (winner.darkMatter || 0) / 100; // 1 ТМ = 0.01 силы
+            if (tmPower >= remainingDiff) { usedTM = remainingDiff * 100; winner.darkMatter -= usedTM; remainingDiff = 0; }
             else { usedTM = winner.darkMatter; remainingDiff -= tmPower; winner.darkMatter = 0; }
         }
         if (remainingDiff > 0) { let maxHullPower = getShip(winner.shipLevel).power; hullDamage = (remainingDiff / maxHullPower) * 100; winner.hull -= hullDamage; if (winner.hull < 0) winner.hull = 0; }
@@ -1251,7 +1251,21 @@
             } else if (currentMission && currentMission.completed) text = "✅ Задание выполнено.";
             document.getElementById("dockContent").innerHTML = `<p>${text}</p>`;
         };
-        document.getElementById("dockMenuBtn").onclick = () => { modal.remove(); currentDockModal = null; player.inDock = false; gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRanking(); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
+        document.getElementById("dockMenuBtn").onclick = () => { 
+            // Выход в главное меню, сохраняем флаг inDock
+            modal.remove(); 
+            currentDockModal = null; 
+            // НЕ сбрасываем player.inDock — он остаётся true
+            gameActive = false; 
+            if (botInterval) clearInterval(botInterval); 
+            if (botCreationTimeout) clearTimeout(botCreationTimeout); 
+            document.getElementById("menuScreen").style.display = "block"; 
+            document.getElementById("gameScreen").classList.add("hidden"); 
+            updateRanking(); 
+            document.getElementById("continueBtn").disabled = player.isDead; 
+            document.getElementById("newGameBtn").disabled = !player.isDead; 
+            saveGame(); 
+        };
         document.getElementById("closeDockBtn").onclick = () => { modal.remove(); currentDockModal = null; player.inDock = false; saveGame(); };
         showMyPlanets();
     }
@@ -1376,7 +1390,17 @@
         document.getElementById("rightBtn").onclick = () => move(1);
         document.getElementById("hyperLeftBtn").onclick = () => hyperJump(-1);
         document.getElementById("hyperRightBtn").onclick = () => hyperJump(1);
-        document.getElementById("menuBtn").onclick = () => { gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRanking(); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
+        document.getElementById("menuBtn").onclick = () => { 
+            gameActive = false; 
+            if (botInterval) clearInterval(botInterval); 
+            if (botCreationTimeout) clearTimeout(botCreationTimeout); 
+            document.getElementById("menuScreen").style.display = "block"; 
+            document.getElementById("gameScreen").classList.add("hidden"); 
+            updateRanking(); 
+            document.getElementById("continueBtn").disabled = player.isDead; 
+            document.getElementById("newGameBtn").disabled = !player.isDead; 
+            saveGame(); 
+        };
         document.getElementById("dockBtn").onclick = () => openDock(false);
         document.getElementById("currentPlanetCard").onclick = () => { if (!player.isDead) openPlanetMenu(player.currentPlanet); };
         document.getElementById("menuScreen").style.display = "block";
