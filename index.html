@@ -583,7 +583,7 @@
         let bot = {
             id: nextBotId++,
             name: `Bot-${nextBotId-1}`,
-            credits: 5000,                    // стартовый капитал 5000
+            credits: 5000,
             cargo: {},
             wins: wins,
             level: level,
@@ -598,6 +598,7 @@
             hasSSGenerator: false,
             missionGood: null,
             missionQty: 0,
+            missionBought: 0,
             missionTargetPlanet: null
         };
         GOODS.forEach(g => { bot.cargo[g.id] = 0; });
@@ -616,13 +617,13 @@
         return effective * hullPercent;
     }
 
-    // --- Функции владения планетами ---
+    // --- Функции владения планетами (можно перекупать у тех, чей уровень меньше или равен) ---
     function canBuyPlanet(planetIdx, buyerLevel, buyerIsPlayer) {
         let owner = planetOwners[planetIdx];
         if (owner === null) return true;
         let ownerLevel = (owner === "player") ? player.level : bots.find(b => b.id === owner)?.level;
         if (ownerLevel === undefined) return true;
-        return Math.abs(buyerLevel - ownerLevel) <= 1;
+        return buyerLevel >= ownerLevel;
     }
     function getPlanetPrice(planetIdx) { return PLANET_PRICE_BASE + (planetPrevOwnersCount[planetIdx] || 0) * 5000; }
     function buyPlanet(planetIdx, buyer, isPlayer) {
@@ -768,7 +769,6 @@
         if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); player.darkMatter += tm; addLogToGame(`Найдена тёмная материя! +${tm} ТМ`, "success"); }
         updateUI();
         encounterWithBots();
-        tryCompleteMission(player, true);
         saveGame();
     }
 
@@ -787,16 +787,15 @@
         addLogToGame(`Гиперпрыжок ${direction === -1 ? "налево" : "направо"}! Вы на планете #${player.currentPlanet}`, "success");
         updateUI();
         encounterWithBots();
-        tryCompleteMission(player, true);
         saveGame();
     }
 
-    // --- Задания: теперь нужно ПРОДАТЬ товар на toPlanet ---
+    // --- Задания: двухэтапные (купить на fromPlanet, продать на toPlanet) ---
     function generateMission() {
         if (missionCompleted) return;
         if (currentMission && !currentMission.completed) return;
         const good = GOODS[Math.floor(Math.random() * GOODS.length)];
-        const qty = Math.floor(Math.random() * 41) + 10; // 10-50
+        const qty = Math.floor(Math.random() * 41) + 10;
         let fromPlanet, toPlanet;
         do { fromPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; toPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; } while (fromPlanet === toPlanet);
         const rewardType = Math.random() < 0.5 ? "credits" : "tm";
@@ -810,29 +809,46 @@
             rewardType: rewardType,
             rewardAmount: rewardAmount,
             completed: false,
-            sold: 0                     // сколько уже продано
+            bought: 0,
+            sold: 0
         };
         missionCompleted = false;
-        addLogToGame(`📡 НОВОЕ ЗАДАНИЕ: продать ${qty} ${good.name} на планете #${toPlanet}. Купить можно где угодно. Награда: ${rewardAmount} ${rewardType === "credits" ? "💰" : "🌑 ТМ"}!`, "mission");
+        addLogToGame(`📡 НОВОЕ ЗАДАНИЕ: купить ${qty} ${good.name} на планете #${fromPlanet}, затем продать их на планете #${toPlanet}. Награда: ${rewardAmount} ${rewardType === "credits" ? "💰" : "🌑 ТМ"}!`, "mission");
         saveGame();
     }
 
-    // Функция вызывается при продаже товара на планете
-    function onSellGood(goodId, quantity, planetNumber) {
+    function onBuyGood(goodId, quantity, planetNumber, isPlayer) {
+        if (!isPlayer) return false;
         if (!currentMission || currentMission.completed) return false;
-        if (planetNumber !== currentMission.toPlanet) return false;
         if (goodId !== currentMission.good) return false;
+        if (planetNumber !== currentMission.fromPlanet) return false;
+        currentMission.bought = (currentMission.bought || 0) + quantity;
+        if (currentMission.bought > currentMission.qty) currentMission.bought = currentMission.qty;
+        addLogToGame(`📦 Задание: куплено ${currentMission.bought}/${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}`, "mission");
+        saveGame();
+        return true;
+    }
+
+    function onSellGood(goodId, quantity, planetNumber, isPlayer) {
+        if (!isPlayer) return false;
+        if (!currentMission || currentMission.completed) return false;
+        if (goodId !== currentMission.good) return false;
+        if (planetNumber !== currentMission.toPlanet) return false;
+        if (currentMission.bought < currentMission.qty) {
+            addLogToGame(`⚠️ Сначала нужно купить ${currentMission.qty} ${currentMission.goodName} на планете #${currentMission.fromPlanet}!`, "warning");
+            return false;
+        }
         currentMission.sold = (currentMission.sold || 0) + quantity;
+        if (currentMission.sold > currentMission.qty) currentMission.sold = currentMission.qty;
         if (currentMission.sold >= currentMission.qty) {
-            // Задание выполнено
             currentMission.completed = true;
             missionCompleted = true;
             if (currentMission.rewardType === "credits") {
                 player.credits += currentMission.rewardAmount;
-                addLogToGame(`🎉 Задание выполнено! Вы продали ${currentMission.qty} ${currentMission.goodName} на планете #${currentMission.toPlanet} и получили ${currentMission.rewardAmount}💰!`, "success");
+                addLogToGame(`🎉 Задание выполнено! Вы продали ${currentMission.qty} ${currentMission.goodName} на #${currentMission.toPlanet} и получили ${currentMission.rewardAmount}💰!`, "success");
             } else {
                 player.darkMatter += currentMission.rewardAmount;
-                addLogToGame(`🎉 Задание выполнено! Вы продали ${currentMission.qty} ${currentMission.goodName} на планете #${currentMission.toPlanet} и получили ${currentMission.rewardAmount}🌑 ТМ!`, "success");
+                addLogToGame(`🎉 Задание выполнено! Вы продали ${currentMission.qty} ${currentMission.goodName} на #${currentMission.toPlanet} и получили ${currentMission.rewardAmount}🌑 ТМ!`, "success");
             }
             saveGame();
             return true;
@@ -843,27 +859,44 @@
         return false;
     }
 
-    function tryCompleteMission(entity, isPlayer) {
-        // У ботов пока оставим старую логику (списание товара) для простоты,
-        // но для игрока это уже не нужно, т.к. задание отслеживается через onSellGood
-        if (!isPlayer) {
-            if (!currentMission || currentMission.completed) return false;
-            if (entity.currentPlanet !== currentMission.toPlanet) return false;
-            let cargoQty = entity.cargo[currentMission.good] || 0;
-            if (cargoQty < currentMission.qty) return false;
-            currentMission.completed = true;
-            missionCompleted = true;
-            entity.cargo[currentMission.good] -= currentMission.qty;
-            if (currentMission.rewardType === "credits") {
-                entity.credits += currentMission.rewardAmount;
-                addLogToGame(`${entity.name} выполнил задание! +${currentMission.rewardAmount}💰`, "success");
-            } else {
-                entity.darkMatter += currentMission.rewardAmount;
-                addLogToGame(`${entity.name} выполнил задание! +${currentMission.rewardAmount}🌑 ТМ`, "success");
+    function botTryCompleteMission(bot) {
+        if (!currentMission || currentMission.completed) return false;
+        if (bot.currentPlanet === currentMission.fromPlanet && (bot.missionBought || 0) < currentMission.qty) {
+            let price = planetPrices[bot.currentPlanet-1][currentMission.good].buy;
+            let needed = currentMission.qty - (bot.missionBought || 0);
+            let canBuy = Math.min(needed, Math.floor(bot.credits / price), planetStocks[bot.currentPlanet-1][currentMission.good]);
+            if (canBuy > 0) {
+                let totalCost = canBuy * price;
+                bot.credits -= totalCost;
+                bot.cargo[currentMission.good] = (bot.cargo[currentMission.good] || 0) + canBuy;
+                planetStocks[bot.currentPlanet-1][currentMission.good] -= canBuy;
+                bot.missionBought = (bot.missionBought || 0) + canBuy;
+                addLogToGame(`${bot.name} купил ${canBuy} ${currentMission.goodName} для задания.`, "mission");
+                saveGame();
             }
-            if (!isPlayer) { entity.wins++; entity.level = getLevelFromWins(entity.wins); }
-            saveGame();
-            return true;
+        }
+        if (bot.currentPlanet === currentMission.toPlanet && (bot.missionBought || 0) >= currentMission.qty) {
+            let cargoQty = bot.cargo[currentMission.good] || 0;
+            if (cargoQty >= currentMission.qty) {
+                let price = planetPrices[bot.currentPlanet-1][currentMission.good].sell;
+                let totalEarn = currentMission.qty * price;
+                bot.credits += totalEarn;
+                bot.cargo[currentMission.good] -= currentMission.qty;
+                planetStocks[bot.currentPlanet-1][currentMission.good] += currentMission.qty;
+                currentMission.completed = true;
+                missionCompleted = true;
+                if (currentMission.rewardType === "credits") {
+                    bot.credits += currentMission.rewardAmount;
+                    addLogToGame(`${bot.name} выполнил задание! +${currentMission.rewardAmount}💰`, "success");
+                } else {
+                    bot.darkMatter += currentMission.rewardAmount;
+                    addLogToGame(`${bot.name} выполнил задание! +${currentMission.rewardAmount}🌑 ТМ`, "success");
+                }
+                bot.wins++;
+                bot.level = getLevelFromWins(bot.wins);
+                saveGame();
+                return true;
+            }
         }
         return false;
     }
@@ -885,7 +918,7 @@
         return false;
     }
 
-    // --- Торговля и планета (с вызовом onSellGood) ---
+    // --- Торговля и планета (с вызовом onBuyGood / onSellGood) ---
     function openPlanetMenu(planetNumber) {
         let modal = document.createElement("div");
         modal.className = "modal";
@@ -1008,6 +1041,7 @@
                 stocks[g.id] -= qty;
                 addIncomeToPlanet(planetNumber-1, totalCost);
                 addLogToGame(`Куплено ${qty} ${g.name}`, "success");
+                onBuyGood(g.id, qty, planetNumber, true);
                 updateUI(); saveGame(); modal.remove(); openPlanetMenu(planetNumber);
             };
             sellBtn.onclick = () => {
@@ -1019,8 +1053,7 @@
                 player.cargo[g.id] -= qty;
                 stocks[g.id] += qty;
                 addLogToGame(`Продано ${qty} ${g.name}`, "success");
-                // Вызов для задания
-                onSellGood(g.id, qty, planetNumber);
+                onSellGood(g.id, qty, planetNumber, true);
                 updateUI(); saveGame(); modal.remove(); openPlanetMenu(planetNumber);
             };
         });
@@ -1034,12 +1067,9 @@
         let planetIdx = bot.currentPlanet - 1;
         let prices = planetPrices[planetIdx];
         let stocks = planetStocks[planetIdx];
-        // Заправка и ремонт
         if (bot.fuel < botShip.fuelCap && bot.credits >= (botShip.fuelCap - bot.fuel) * FUEL_PRICE) { let needed = botShip.fuelCap - bot.fuel; bot.credits -= needed * FUEL_PRICE; bot.fuel = botShip.fuelCap; }
         if (bot.hull < 100 && bot.credits >= (100 - bot.hull) * 10) { let needed = 100 - bot.hull; bot.credits -= needed * 10; bot.hull = 100; }
-        // Покупка ракет
         if ((bot.cargo.rockets || 0) < 5 && totalCargo + 5 <= botShip.cargo && bot.credits >= prices.rockets.buy * 5 && stocks.rockets >= 5) { let qty = Math.min(5, Math.floor(bot.credits / prices.rockets.buy), stocks.rockets); if (qty > 0) { bot.credits -= qty * prices.rockets.buy; bot.cargo.rockets = (bot.cargo.rockets || 0) + qty; stocks.rockets -= qty; totalCargo += qty * 5; } }
-        // Торговля: покупаем, если цена на 20% ниже базовой
         for (let g of GOODS) {
             let base = g.baseBuy;
             if (prices[g.id].buy < base * 0.8 && bot.credits >= prices[g.id].buy && totalCargo + g.cargoSpace <= botShip.cargo && stocks[g.id] > 0) {
@@ -1054,7 +1084,6 @@
                 }
             }
         }
-        // Продажа, если цена на 20% выше базовой
         for (let g of GOODS) {
             let base = g.baseSell;
             if (prices[g.id].sell > base * 1.2 && (bot.cargo[g.id] || 0) > 0) {
@@ -1065,10 +1094,8 @@
                 break;
             }
         }
-        // Покупка модулей
         if (!bot.hasTMHarvester && bot.credits >= MODULE_HARVESTER_COST) { bot.credits -= MODULE_HARVESTER_COST; bot.hasTMHarvester = true; addLogToGame(`${bot.name} купил модуль добычи ТМ!`, "success"); }
         if (!bot.hasSSGenerator && bot.credits >= MODULE_SS_GENERATOR_COST) { bot.credits -= MODULE_SS_GENERATOR_COST; bot.hasSSGenerator = true; addLogToGame(`${bot.name} купил генератор СС!`, "success"); }
-        // Улучшение корабля
         if (bot.shipLevel < bot.level && bot.credits >= getShip(bot.shipLevel+1).cost) { let newShip = getShip(bot.shipLevel+1); bot.credits -= newShip.cost; bot.shipLevel++; let fuelPercent = bot.fuel / getShip(bot.shipLevel-1).fuelCap; bot.fuel = Math.min(newShip.fuelCap, Math.floor(newShip.fuelCap * fuelPercent)); bot.hasTMHarvester = false; bot.hasSSGenerator = false; }
     }
 
@@ -1084,7 +1111,6 @@
         }
         for (let bot of bots) {
             if (Date.now() - (bot.lastMoveTime||0) >= BOT_MOVE_INTERVAL_MS) {
-                // Взаимодействие с игроком
                 if (!player.isDead && player.currentPlanet === bot.currentPlanet && Date.now() > player.immunityUntil && Math.abs(player.level - bot.level) <= 1) {
                     let playerPower = getTotalPower(player);
                     let botPower = getTotalPower(bot);
@@ -1102,20 +1128,17 @@
                 if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); bot.darkMatter += tm; }
                 if (bot.hasTMHarvester) bot.darkMatter++;
                 botTradeAndUpgrade(bot);
-                tryCompleteMission(bot, false);
-                // Покупка планеты
+                botTryCompleteMission(bot);
                 let planetIdx = bot.currentPlanet-1;
                 if (planetOwners[planetIdx] !== bot.id && canBuyPlanet(planetIdx, bot.level, false) && bot.credits >= getPlanetPrice(planetIdx)) {
                     buyPlanet(planetIdx, bot, false);
                 }
-                // Установка модулей на планеты (шанс 10%)
                 for (let i=0; i<PLANET_COUNT; i++) {
                     if (planetOwners[i] === bot.id && Math.random()<0.1 && bot.credits >= MODULE_PLANET_COST) {
                         if (!planetModules[i].teleport && Math.random()<0.5) installPlanetModule(i, "teleport", false, bot);
                         else if (!planetModules[i].tmGenerator) installPlanetModule(i, "tmGenerator", false, bot);
                     }
                 }
-                // Сбор доходов и ТМ (шанс 50%)
                 if (Math.random() < 0.5) collectAllIncome(false, bot);
                 if (Math.random() < 0.5) collectTMFromPlanets(false, bot);
                 let newLevel = getLevelFromWins(bot.wins);
@@ -1183,7 +1206,7 @@
         }
     }
 
-    // Док (без изменений, кроме обновления ленты)
+    // Док
     function updateDockLog() { if (!currentDockModal) return; let dockLogDiv = currentDockModal.querySelector(".dock-log"); if (dockLogDiv) { let mainLog = document.getElementById("logBox"); if (mainLog) { dockLogDiv.innerHTML = mainLog.innerHTML; dockLogDiv.scrollTop = dockLogDiv.scrollHeight; } } }
     function reopenDock() { isRestoringDock = true; openDock(true); isRestoringDock = false; }
     function openDock(restore = false) {
@@ -1221,7 +1244,13 @@
         document.getElementById("dockTeleportBtn").onclick = () => showTeleport();
         document.getElementById("dockMyPlanetsBtn").onclick = () => showMyPlanets();
         document.getElementById("dockStatsBtn").onclick = () => { let ship = getShip(player.shipLevel); document.getElementById("dockContent").innerHTML = `<p>🛸 Корабль: ${ship.name}<br>Сила: ${getTotalPower(player).toFixed(2)}<br>Прочность: ${player.hull}%<br>Уровень: ${player.level}<br>Победы: ${player.wins}<br>Трюм: ${Object.values(player.cargo).reduce((a,b)=>a+b,0)}/${ship.cargo}<br>Модули: ${player.hasTMHarvester ? "🌑 Добыча ТМ " : ""}${player.hasSSGenerator ? "🌀 Генератор СС (+2 СС/шаг)" : ""}</p>`; };
-        document.getElementById("dockMissionBtn").onclick = () => { let text = "Нет задания"; if (currentMission && !currentMission.completed) text = `📋 ПРОДАЙТЕ ${currentMission.qty} ${currentMission.goodName} на планете #${currentMission.toPlanet}. Прогресс: ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`; else if (currentMission && currentMission.completed) text = "✅ Задание выполнено."; document.getElementById("dockContent").innerHTML = `<p>${text}</p>`; };
+        document.getElementById("dockMissionBtn").onclick = () => { 
+            let text = "Нет задания";
+            if (currentMission && !currentMission.completed) {
+                text = `📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
+            } else if (currentMission && currentMission.completed) text = "✅ Задание выполнено.";
+            document.getElementById("dockContent").innerHTML = `<p>${text}</p>`;
+        };
         document.getElementById("dockMenuBtn").onclick = () => { modal.remove(); currentDockModal = null; player.inDock = false; gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRanking(); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
         document.getElementById("closeDockBtn").onclick = () => { modal.remove(); currentDockModal = null; player.inDock = false; saveGame(); };
         showMyPlanets();
@@ -1231,15 +1260,45 @@
     function updateRanking() {
         let all = [{ name: "⭐ ВЫ", level: player.level, power: getTotalPower(player), wins: player.wins }, ...bots.map(b => ({ name: b.name, level: b.level, power: getTotalPower(b), wins: b.wins }))];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表|<thead><table><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></thead><tbody>`;
+        let html = `表<table><thead><tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
         all.forEach(p => html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
         html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
     }
 
     // Экспорт/Импорт
-    function exportSave() { let saveData = localStorage.getItem("starNomadFull"); if (!saveData) { alert("Нет сохранения."); return; } let blob = new Blob([saveData], {type: "application/json"}); let url = URL.createObjectURL(blob); let a = document.createElement("a"); a.href = url; a.download = "star_nomad_save.json"; a.click(); URL.revokeObjectURL(url); alert("Сохранение экспортировано."); }
-    function importSave() { let input = document.createElement("input"); input.type = "file"; input.accept = "application/json"; input.onchange = (e) => { let file = e.target.files[0]; if (!file) return; let reader = new FileReader(); reader.onload = (ev) => { try { let data = JSON.parse(ev.target.result); localStorage.setItem("starNomadFull", JSON.stringify(data)); alert("Сохранение импортировано. Перезагрузите страницу."); location.reload(); } catch (err) { alert("Ошибка импорта."); } }; reader.readAsText(file); }; input.click(); }
+    function exportSave() {
+        let saveData = localStorage.getItem("starNomadFull");
+        if (!saveData) { alert("Нет сохранения."); return; }
+        let blob = new Blob([saveData], {type: "application/json"});
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement("a");
+        a.href = url;
+        a.download = "star_nomad_save.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        alert("Сохранение экспортировано.");
+    }
+    function importSave() {
+        let input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json";
+        input.onchange = (e) => {
+            let file = e.target.files[0];
+            if (!file) return;
+            let reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    let data = JSON.parse(ev.target.result);
+                    localStorage.setItem("starNomadFull", JSON.stringify(data));
+                    alert("Сохранение импортировано. Перезагрузите страницу.");
+                    location.reload();
+                } catch (err) { alert("Ошибка импорта."); }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
 
     // UI
     function updateUI() {
@@ -1258,8 +1317,9 @@
         let cargoHtml = ''; for (let g of GOODS) { let qty = player.cargo[g.id] || 0; cargoHtml += `<div class="cargo-item">${g.name}: ${qty}</div>`; }
         document.getElementById("cargoDisplay").innerHTML = cargoHtml || '<div class="cargo-item">Пусто</div>';
         let missionText = "Нет активного задания";
-        if (currentMission && !currentMission.completed) missionText = `📋 ПРОДАЙТЕ ${currentMission.qty} ${currentMission.goodName} на планете #${currentMission.toPlanet}. Прогресс: ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
-        else if (currentMission && currentMission.completed) missionText = "✅ Задание выполнено.";
+        if (currentMission && !currentMission.completed) {
+            missionText = `📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
+        } else if (currentMission && currentMission.completed) missionText = "✅ Задание выполнено.";
         document.getElementById("missionText").innerText = missionText;
         if (currentDockModal) updateDockLog();
     }
