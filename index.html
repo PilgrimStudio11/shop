@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Звездные войны — Торговая Империя</title>
+    <title>Star Nomad — Звёздные войны</title>
     <!-- PWA метатеги -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -296,15 +296,20 @@
             color: #03050b;
             border: none;
         }
+        .file-save-note {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
 <div id="app">
     <!-- Меню -->
     <div id="menuScreen" style="padding: 20px;">
-        <h1 style="text-align:center">⭐ ЗВЕЗДНЫЕ ВОЙНЫ: ТОРГОВАЯ ИМПЕРИЯ ⭐</h1>
+        <h1 style="text-align:center">🪐 ЗВЕЗДНЫЕ ВОЙНЫ: ТОРГОВАЯ ИМПЕРИЯ 🌌</h1>
         <div id="pwaInstallBanner" class="install-banner hidden">
-            📱 Установите приложение на главный экран для лучшего опыта!
+            📱 Добавьте приложение на главный экран для полноэкранного режима
             <button id="installPwaBtn">Установить</button>
         </div>
         <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin: 30px 0;">
@@ -312,8 +317,8 @@
             <button id="newGameBtn">🆕 НОВАЯ ИГРА</button>
             <button id="shopBtn">🛸 КОРАБЛИ</button>
             <button id="rankingBtn">🏆 РЕЙТИНГ</button>
-            <button id="exportBtn">💾 ЭКСПОРТ</button>
-            <button id="importBtn">📂 ИМПОРТ</button>
+            <button id="exportBtn">💾 ЭКСПОРТ (Сохранить в файл)</button>
+            <button id="importBtn">📂 ИМПОРТ (Загрузить из файла)</button>
             <button id="exitBtn">❌ ВЫХОД</button>
         </div>
         <div id="rankingPanel" class="hidden" style="background: #03070faa; border-radius: 24px; padding: 15px;">
@@ -1320,7 +1325,7 @@
     function updateRanking() {
         let all = [{ name: "⭐ ВЫ", level: player.level, power: getTotalPower(player), wins: player.wins }, ...bots.map(b => ({ name: b.name, level: b.level, power: getTotalPower(b), wins: b.wins }))];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表<table><thead><tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
+        let html = `表<table border="0" cellpadding="5"><thead><tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
         all.forEach(p => html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
         html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
@@ -1329,31 +1334,35 @@
     // Экспорт/Импорт
     function exportSave() {
         let saveData = localStorage.getItem("starNomadFull");
-        if (!saveData) { alert("Нет сохранения."); return; }
-        let blob = new Blob([saveData], {type: "application/json"});
-        let url = URL.createObjectURL(blob);
-        let a = document.createElement("a");
+        if (!saveData) { alert("Нет сохранения для экспорта."); return; }
+        // Создаём файл и предлагаем сохранить
+        const blob = new Blob([saveData], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
         a.href = url;
-        a.download = "star_nomad_save.json";
+        a.download = `star_nomad_save_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        alert("Сохранение экспортировано.");
+        alert("Сохранение экспортировано. Файл сохранён в загрузки.\n\nНа iPhone: нажмите «Сохранить в Файлы» и выберите iCloud Drive.");
     }
+
     function importSave() {
-        let input = document.createElement("input");
+        const input = document.createElement("input");
         input.type = "file";
         input.accept = "application/json";
         input.onchange = (e) => {
-            let file = e.target.files[0];
+            const file = e.target.files[0];
             if (!file) return;
-            let reader = new FileReader();
+            const reader = new FileReader();
             reader.onload = (ev) => {
                 try {
-                    let data = JSON.parse(ev.target.result);
+                    const data = JSON.parse(ev.target.result);
                     localStorage.setItem("starNomadFull", JSON.stringify(data));
-                    alert("Сохранение импортировано. Перезагрузите страницу.");
+                    alert("Сохранение импортировано. Перезагрузите страницу для применения.");
                     location.reload();
-                } catch (err) { alert("Ошибка импорта."); }
+                } catch (err) {
+                    alert("Ошибка: неверный формат файла.");
+                }
             };
             reader.readAsText(file);
         };
@@ -1472,20 +1481,20 @@
         addLogToGame(`⏳ Симуляция пропущенного времени (${Math.floor(ms / 1000 / 60)} минут) завершена.`, "success");
     }
 
-    // --- PWA регистрация service worker и манифеста ---
+    // --- PWA регистрация ---
     function registerPWA() {
-        // Генерация манифеста
+        // Манифест
         const manifest = {
             name: "Star Nomad — Торговая Империя",
             short_name: "Star Nomad",
-            description: "Космическая торговая песочница с элементами RPG",
+            description: "Космическая торговая песочница",
             start_url: ".",
             display: "standalone",
             theme_color: "#03050b",
             background_color: "#03050b",
             icons: [
                 {
-                    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%2303050b'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='%23ffcf6e'%3E🚀%3C/text%3E%3C/svg%3E",
+                    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%2303050b' stroke='%23ffcf6e' stroke-width='2'/%3E%3Ctext x='50' y='70' font-size='55' text-anchor='middle' fill='%23ffcf6e'%3E🪐%3C/text%3E%3C/svg%3E",
                     sizes: "any",
                     type: "image/svg+xml",
                     purpose: "any maskable"
@@ -1495,19 +1504,17 @@
         const manifestBlob = new Blob([JSON.stringify(manifest)], {type: "application/manifest+json"});
         const manifestURL = URL.createObjectURL(manifestBlob);
         document.getElementById("manifest-link").setAttribute("href", manifestURL);
-
+        
         // Service Worker
         if ('serviceWorker' in navigator) {
             const swCode = `
                 const CACHE_NAME = 'star-nomad-v1';
                 const urlsToCache = [location.pathname];
-
                 self.addEventListener('install', event => {
                     event.waitUntil(
                         caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
                     );
                 });
-
                 self.addEventListener('fetch', event => {
                     event.respondWith(
                         caches.match(event.request).then(response => {
@@ -1515,7 +1522,6 @@
                         })
                     );
                 });
-
                 self.addEventListener('activate', event => {
                     event.waitUntil(
                         caches.keys().then(keys => Promise.all(
@@ -1528,12 +1534,10 @@
             `;
             const swBlob = new Blob([swCode], {type: "application/javascript"});
             const swURL = URL.createObjectURL(swBlob);
-            navigator.serviceWorker.register(swURL).then(() => {
-                console.log("Service Worker registered");
-            }).catch(err => console.log("SW registration failed", err));
+            navigator.serviceWorker.register(swURL).catch(err => console.log("SW registration failed", err));
         }
 
-        // Отображение баннера установки
+        // Показ баннера установки
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
@@ -1547,6 +1551,8 @@
                     deferredPrompt = null;
                     document.getElementById("pwaInstallBanner").classList.add("hidden");
                 });
+            } else {
+                alert("Нажмите «Поделиться» → «На экран «Домой»» в Safari, чтобы установить приложение.");
             }
         });
     }
