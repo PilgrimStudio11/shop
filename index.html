@@ -14,7 +14,7 @@
         * {
             box-sizing: border-box;
             user-select: none;
-            touch-action: manipulation; /* предотвращает масштабирование при двойном тапе */
+            touch-action: manipulation;
         }
         body {
             background: #03050b;
@@ -352,6 +352,7 @@
             <div class="stat">🌀 СС: <span id="strangePowerVal">0</span></div>
             <div class="stat">🌑 ТМ: <span id="darkMatterVal">0</span></div>
             <div class="stat">⭐ УРОВЕНЬ: <span id="levelVal">1</span> | 🏆 ПОБЕД: <span id="winsVal">0</span></div>
+            <div class="stat">📦 ТРЮМ: <span id="cargoUsed">0</span>/<span id="cargoMax">0</span></div>
         </div>
         <div class="cargo-row" id="cargoDisplay"></div>
         <div class="main-area">
@@ -407,11 +408,12 @@
     const PLANET_INCOME_PERCENT = 0.1;
     const TM_GENERATOR_RATE = 10;
 
+    // Вес товаров: золото 1, рабы 0.5, продукты 0.25, ракеты 4, нефть 1
     const GOODS = [
         { id: "gold", name: "Золото", baseBuy: 100, baseSell: 100, spread: 30, cargoSpace: 1, rocket: false },
-        { id: "slaves", name: "Рабы", baseBuy: 80, baseSell: 80, spread: 25, cargoSpace: 1, rocket: false },
-        { id: "food", name: "Продукты", baseBuy: 40, baseSell: 40, spread: 15, cargoSpace: 1, rocket: false },
-        { id: "rockets", name: "Ракеты", baseBuy: 200, baseSell: 200, spread: 50, cargoSpace: 5, rocket: true },
+        { id: "slaves", name: "Рабы", baseBuy: 80, baseSell: 80, spread: 25, cargoSpace: 0.5, rocket: false },
+        { id: "food", name: "Продукты", baseBuy: 40, baseSell: 40, spread: 15, cargoSpace: 0.25, rocket: false },
+        { id: "rockets", name: "Ракеты", baseBuy: 200, baseSell: 200, spread: 50, cargoSpace: 4, rocket: true },
         { id: "oil", name: "Нефть", baseBuy: 60, baseSell: 60, spread: 20, cargoSpace: 1, rocket: false }
     ];
 
@@ -651,29 +653,43 @@
     function getTotalPower(entity) {
         let ship = getShip(entity.shipLevel);
         let rocketBonus = (entity.cargo.rockets || 0) * 0.5;
-        let tmBonus = (entity.darkMatter || 0) / 100;   // 1 ТМ = 0.01 силы
+        let tmBonus = (entity.darkMatter || 0) / 100;
         let effective = ship.power + rocketBonus + tmBonus;
         let hullPercent = Math.max(0, entity.hull) / 100;
         return effective * hullPercent;
     }
 
-    // --- Функция нахождения товаров при перелёте ---
+    // --- Функция нахождения товаров при перелёте (лог только для игрока) ---
     function tryFindGoods(entity, isPlayer) {
         if (Math.random() > GOODS_FIND_CHANCE) return false;
-        // Случайный товар из разрешённых
         const goodType = GOODS_FIND_TYPES[Math.floor(Math.random() * GOODS_FIND_TYPES.length)];
         const good = GOODS.find(g => g.id === goodType);
         if (!good) return false;
         const amount = Math.floor(Math.random() * (GOODS_FIND_AMOUNT[1] - GOODS_FIND_AMOUNT[0] + 1) + GOODS_FIND_AMOUNT[0]);
-        // Проверяем место в трюме
         const ship = getShip(entity.shipLevel);
-        const currentCargo = Object.values(entity.cargo).reduce((a,b)=>a+b,0);
-        const freeSpace = ship.cargo - currentCargo;
+        let currentCargoWeight = 0;
+        for (let g of GOODS) {
+            currentCargoWeight += (entity.cargo[g.id] || 0) * g.cargoSpace;
+        }
+        const freeSpace = ship.cargo - currentCargoWeight;
         if (freeSpace < amount * good.cargoSpace) return false;
-        // Добавляем товар
         entity.cargo[good.id] = (entity.cargo[good.id] || 0) + amount;
-        addLogToGame(`${isPlayer ? "Вы" : entity.name} нашли ${amount} ${good.name} в космосе!`, "goods");
+        if (isPlayer) {
+            addLogToGame(`Вы нашли ${amount} ${good.name} в космосе!`, "goods");
+        }
         return true;
+    }
+
+    // --- Регулярное пополнение ракет и рабов на планетах (раз в час) ---
+    function replenishPlanetsGoods() {
+        for (let i = 0; i < PLANET_COUNT; i++) {
+            let rocketsAdd = Math.floor(Math.random() * 101) + 50; // 50-150
+            let slavesAdd = Math.floor(Math.random() * 101) + 50;
+            planetStocks[i].rockets = (planetStocks[i].rockets || 0) + rocketsAdd;
+            planetStocks[i].slaves = (planetStocks[i].slaves || 0) + slavesAdd;
+        }
+        addLogToGame(`📦 На планеты доставлены новые партии ракет и рабов!`, "success");
+        saveGame();
     }
 
     // --- Функции владения планетами ---
@@ -771,9 +787,19 @@
                 let stolen = Math.floor(loserQty * stealPercent);
                 if (stolen > 0) {
                     let cargoSpace = getShip(winner.shipLevel).cargo;
-                    let currentCargo = Object.values(winner.cargo).reduce((a,b)=>a+b,0);
-                    if (currentCargo + stolen * g.cargoSpace <= cargoSpace) { winner.cargo[g.id] = (winner.cargo[g.id] || 0) + stolen; stolenGoods.push(`${g.name}: ${stolen}`); }
-                    else { let maxSpace = Math.floor((cargoSpace - currentCargo) / g.cargoSpace); let actualStolen = Math.min(stolen, maxSpace); if (actualStolen > 0) { winner.cargo[g.id] = (winner.cargo[g.id] || 0) + actualStolen; stolenGoods.push(`${g.name}: ${actualStolen}`); } }
+                    let currentCargoWeight = 0;
+                    for (let g2 of GOODS) currentCargoWeight += (winner.cargo[g2.id] || 0) * g2.cargoSpace;
+                    if (currentCargoWeight + stolen * g.cargoSpace <= cargoSpace) {
+                        winner.cargo[g.id] = (winner.cargo[g.id] || 0) + stolen;
+                        stolenGoods.push(`${g.name}: ${stolen}`);
+                    } else {
+                        let maxSpace = Math.floor((cargoSpace - currentCargoWeight) / g.cargoSpace);
+                        let actualStolen = Math.min(stolen, maxSpace);
+                        if (actualStolen > 0) {
+                            winner.cargo[g.id] = (winner.cargo[g.id] || 0) + actualStolen;
+                            stolenGoods.push(`${g.name}: ${actualStolen}`);
+                        }
+                    }
                     loser.cargo[g.id] -= stolen;
                 }
             }
@@ -826,7 +852,6 @@
         if (player.hasSSGenerator) { player.strangePower += 2; addLogToGame(`Генератор СС: +2 СС`, "success"); }
         if (player.hasTMHarvester) { player.darkMatter++; addLogToGame(`Модуль добычи: +1 ТМ`, "success"); }
         if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); player.darkMatter += tm; addLogToGame(`Найдена тёмная материя! +${tm} ТМ`, "success"); }
-        // Находка товаров
         tryFindGoods(player, true);
         updateUI();
         encounterWithBots();
@@ -1094,9 +1119,10 @@
                 let stock = stocks[g.id];
                 if (stock < qty) { addLogToGame(`Мало товара`, "warning"); return; }
                 if (player.credits < totalCost) { addLogToGame("Не хватает кредитов.", "warning"); return; }
-                let cargoSpace = getShip(player.shipLevel).cargo;
-                let currentCargo = Object.values(player.cargo).reduce((a,b)=>a+b,0);
-                if (currentCargo + qty * g.cargoSpace > cargoSpace) { addLogToGame("Места нет.", "warning"); return; }
+                let currentCargoWeight = 0;
+                for (let g2 of GOODS) currentCargoWeight += (player.cargo[g2.id] || 0) * g2.cargoSpace;
+                let cargoSpace = ship.cargo;
+                if (currentCargoWeight + qty * g.cargoSpace > cargoSpace) { addLogToGame("Места нет.", "warning"); return; }
                 player.credits -= totalCost;
                 player.cargo[g.id] += qty;
                 stocks[g.id] -= qty;
@@ -1124,23 +1150,27 @@
     // --- Боты ---
     function botTradeAndUpgrade(bot) {
         let botShip = getShip(bot.shipLevel);
-        let totalCargo = Object.values(bot.cargo).reduce((a,b)=>a+b,0);
+        let totalCargoWeight = 0;
+        for (let g of GOODS) totalCargoWeight += (bot.cargo[g.id] || 0) * g.cargoSpace;
         let planetIdx = bot.currentPlanet - 1;
         let prices = planetPrices[planetIdx];
         let stocks = planetStocks[planetIdx];
         if (bot.fuel < botShip.fuelCap && bot.credits >= (botShip.fuelCap - bot.fuel) * FUEL_PRICE) { let needed = botShip.fuelCap - bot.fuel; bot.credits -= needed * FUEL_PRICE; bot.fuel = botShip.fuelCap; }
         if (bot.hull < 100 && bot.credits >= (100 - bot.hull) * 10) { let needed = 100 - bot.hull; bot.credits -= needed * 10; bot.hull = 100; }
-        if ((bot.cargo.rockets || 0) < 5 && totalCargo + 5 <= botShip.cargo && bot.credits >= prices.rockets.buy * 5 && stocks.rockets >= 5) { let qty = Math.min(5, Math.floor(bot.credits / prices.rockets.buy), stocks.rockets); if (qty > 0) { bot.credits -= qty * prices.rockets.buy; bot.cargo.rockets = (bot.cargo.rockets || 0) + qty; stocks.rockets -= qty; totalCargo += qty * 5; } }
+        if ((bot.cargo.rockets || 0) < 5 && totalCargoWeight + 5 * 4 <= botShip.cargo && bot.credits >= prices.rockets.buy * 5 && stocks.rockets >= 5) {
+            let qty = Math.min(5, Math.floor(bot.credits / prices.rockets.buy), stocks.rockets);
+            if (qty > 0) { bot.credits -= qty * prices.rockets.buy; bot.cargo.rockets = (bot.cargo.rockets || 0) + qty; stocks.rockets -= qty; totalCargoWeight += qty * 4; }
+        }
         for (let g of GOODS) {
             let base = g.baseBuy;
-            if (prices[g.id].buy < base * 0.8 && bot.credits >= prices[g.id].buy && totalCargo + g.cargoSpace <= botShip.cargo && stocks[g.id] > 0) {
+            if (prices[g.id].buy < base * 0.8 && bot.credits >= prices[g.id].buy && totalCargoWeight + g.cargoSpace <= botShip.cargo && stocks[g.id] > 0) {
                 let qty = Math.min(Math.floor(bot.credits / prices[g.id].buy), stocks[g.id]);
-                qty = Math.min(qty, Math.floor((botShip.cargo - totalCargo) / g.cargoSpace));
+                qty = Math.min(qty, Math.floor((botShip.cargo - totalCargoWeight) / g.cargoSpace));
                 if (qty > 0) {
                     bot.credits -= qty * prices[g.id].buy;
                     bot.cargo[g.id] = (bot.cargo[g.id] || 0) + qty;
                     stocks[g.id] -= qty;
-                    totalCargo += qty * g.cargoSpace;
+                    totalCargoWeight += qty * g.cargoSpace;
                     break;
                 }
             }
@@ -1163,7 +1193,6 @@
     function botAI() {
         if (!gameActive) return;
         const now = Date.now();
-        // Бои между ботами
         let planetsWithBots = new Set();
         for (let bot of bots) planetsWithBots.add(bot.currentPlanet);
         for (let planet of planetsWithBots) {
@@ -1172,7 +1201,6 @@
             botsOnPlanet.sort((a,b) => getTotalPower(b) - getTotalPower(a));
             resolveCombat(botsOnPlanet[0], botsOnPlanet[1], false);
         }
-        // Движение ботов
         for (let bot of bots) {
             if (now >= bot.nextMoveTime) {
                 if (!player.isDead && player.currentPlanet === bot.currentPlanet && now > player.immunityUntil && Math.abs(player.level - bot.level) <= 1) {
@@ -1199,7 +1227,6 @@
                 if (bot.hasSSGenerator) bot.strangePower += 2;
                 if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); bot.darkMatter += tm; }
                 if (bot.hasTMHarvester) bot.darkMatter++;
-                // Находка товаров для бота
                 tryFindGoods(bot, false);
                 botTradeAndUpgrade(bot);
                 botTryCompleteMission(bot);
@@ -1235,7 +1262,7 @@
         }, BOT_CREATE_INTERVAL_MS); 
     }
 
-    // Магазин (табы)
+    // Магазин
     function openShipShopModal() {
         let shopDiv = document.getElementById("shopPanel");
         shopDiv.classList.remove("hidden");
@@ -1327,7 +1354,9 @@
         document.getElementById("dockCollectTMBtn").onclick = () => { collectTMFromPlanets(true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); };
         document.getElementById("dockTeleportBtn").onclick = () => showTeleport();
         document.getElementById("dockMyPlanetsBtn").onclick = () => showMyPlanets();
-        document.getElementById("dockStatsBtn").onclick = () => { let ship = getShip(player.shipLevel); document.getElementById("dockContent").innerHTML = `<p>🛸 Корабль: ${ship.name}<br>Сила: ${getTotalPower(player).toFixed(2)}<br>Прочность: ${player.hull}%<br>Уровень: ${player.level}<br>Победы: ${player.wins}<br>Трюм: ${Object.values(player.cargo).reduce((a,b)=>a+b,0)}/${ship.cargo}<br>Модули: ${player.hasTMHarvester ? "🌑 Добыча ТМ " : ""}${player.hasSSGenerator ? "🌀 Генератор СС (+2 СС/шаг)" : ""}</p>`; };
+        document.getElementById("dockStatsBtn").onclick = () => { let ship = getShip(player.shipLevel); document.getElementById("dockContent").innerHTML = `<p>🛸 Корабль: ${ship.name}<br>Сила: ${getTotalPower(player).toFixed(2)}<br>Прочность: ${player.hull}%<br>Уровень: ${player.level}<br>Победы: ${player.wins}<br>Трюм: ${(function(){
+            let w=0; for(let g of GOODS) w+=(player.cargo[g.id]||0)*g.cargoSpace; return w.toFixed(1);
+        })()}/${ship.cargo}<br>Модули: ${player.hasTMHarvester ? "🌑 Добыча ТМ " : ""}${player.hasSSGenerator ? "🌀 Генератор СС (+2 СС/шаг)" : ""}</p>`; };
         document.getElementById("dockMissionBtn").onclick = () => { 
             let text = "Нет задания";
             if (currentMission && !currentMission.completed) {
@@ -1356,7 +1385,7 @@
     function updateRanking() {
         let all = [{ name: "⭐ ВЫ", level: player.level, power: getTotalPower(player), wins: player.wins }, ...bots.map(b => ({ name: b.name, level: b.level, power: getTotalPower(b), wins: b.wins }))];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表<table border="0" cellpadding="5"><thead> <tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr> </thead><tbody>`;
+        let html = `<table border="0" cellpadding="5"><thead><tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
         all.forEach(p => html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
         html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
@@ -1413,7 +1442,17 @@
         document.getElementById("levelVal").innerText = player.level;
         document.getElementById("winsVal").innerText = player.wins;
         document.getElementById("currentPlanetName").innerHTML = `Планета #${player.currentPlanet}`;
-        let cargoHtml = ''; for (let g of GOODS) { let qty = player.cargo[g.id] || 0; cargoHtml += `<div class="cargo-item">${g.name}: ${qty}</div>`; }
+        // Груз
+        let currentCargoWeight = 0;
+        for (let g of GOODS) currentCargoWeight += (player.cargo[g.id] || 0) * g.cargoSpace;
+        document.getElementById("cargoUsed").innerText = currentCargoWeight.toFixed(1);
+        document.getElementById("cargoMax").innerText = ship.cargo;
+        // Список товаров в трюме
+        let cargoHtml = '';
+        for (let g of GOODS) {
+            let qty = player.cargo[g.id] || 0;
+            if (qty > 0) cargoHtml += `<div class="cargo-item">${g.name}: ${qty}</div>`;
+        }
         document.getElementById("cargoDisplay").innerHTML = cargoHtml || '<div class="cargo-item">Пусто</div>';
         let missionText = "Нет активного задания";
         if (currentMission && !currentMission.completed) {
@@ -1451,10 +1490,12 @@
         setInterval(() => { if (gameActive) refreshPricesOnly(); }, 60000);
         setInterval(() => { if (gameActive) updateMissionByTimer(); }, 60000);
         setInterval(() => { if (gameActive && player.immunityUntil && Date.now() > player.immunityUntil && player.immunityUntil !== 0) { addLogToGame("🛡️ Иммунитет закончился! Боты могут атаковать.", "warning"); player.immunityUntil = 0; saveGame(); } }, 60000);
+        // Запускаем пополнение товаров на планетах раз в час
+        setInterval(() => { if (gameActive) replenishPlanetsGoods(); }, 60 * 60 * 1000);
         if (player.inDock) reopenDock();
     }
 
-    // ----- СИМУЛЯЦИЯ ПРОПУЩЕННОГО ВРЕМЕНИ -----
+    // Симуляция пропущенного времени
     function simulateTimePassed(ms) {
         if (ms <= 0 || ms > 12 * 60 * 60 * 1000) return;
         let minutes = ms / 60000;
@@ -1513,7 +1554,7 @@
         addLogToGame(`⏳ Симуляция пропущенного времени (${Math.floor(ms / 1000 / 60)} минут) завершена.`, "success");
     }
 
-    // --- PWA регистрация ---
+    // PWA регистрация
     function registerPWA() {
         const manifest = {
             name: "Star Nomad — Торговая Империя",
