@@ -289,8 +289,8 @@
             <button id="newGameBtn">🆕 НОВАЯ ИГРА</button>
             <button id="shopBtn">🛸 КОРАБЛИ</button>
             <button id="rankingBtn">🏆 РЕЙТИНГ</button>
-            <button id="exportBtn">💾 ЭКСПОРТ</button>
-            <button id="importBtn">📂 ИМПОРТ</button>
+            <button id="saveGameBtn">💾 СОХРАНИТЬ ИГРУ</button>
+            <button id="loadGameBtn">📂 ЗАГРУЗИТЬ ИГРУ</button>
             <button id="exitBtn">❌ ВЫХОД</button>
         </div>
         <div id="rankingPanel" class="hidden" style="background: #03070faa; border-radius: 24px; padding: 15px;">
@@ -358,7 +358,8 @@
     const DOCK_COST = 100;
     const DARK_MATTER_CHANCE = 0.1;
     const DARK_MATTER_AMOUNT = [2,5];
-    const BOT_MOVE_INTERVAL_MS = 10000;
+    const BOT_MOVE_INTERVAL_MIN = 1000;   // 1 секунда
+    const BOT_MOVE_INTERVAL_MAX = 3000;   // 3 секунды
     const BOT_CREATE_INTERVAL_MS = 60 * 60 * 1000;
     const PRICE_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
     const MISSION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
@@ -679,7 +680,7 @@
         for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === botId) { planetOwners[i] = null; planetModules[i] = { teleport: false, tmGenerator: false }; planetIncome[i] = 0; planetTM[i] = 0; }
     }
 
-    // --- Боевая система (с учётом исправленной силы ТМ) ---
+    // --- Боевая система ---
     function resolveCombat(attacker, defender, isPlayerAttacker) {
         let powerA = getTotalPower(attacker);
         let powerB = getTotalPower(defender);
@@ -695,7 +696,7 @@
             else { usedRockets = winner.cargo.rockets; remainingDiff -= rocketPower; winner.cargo.rockets = 0; }
         }
         if (remainingDiff > 0 && winner.darkMatter) {
-            let tmPower = (winner.darkMatter || 0) / 100; // 1 ТМ = 0.01 силы
+            let tmPower = (winner.darkMatter || 0) / 100;
             if (tmPower >= remainingDiff) { usedTM = remainingDiff * 100; winner.darkMatter -= usedTM; remainingDiff = 0; }
             else { usedTM = winner.darkMatter; remainingDiff -= tmPower; winner.darkMatter = 0; }
         }
@@ -918,7 +919,7 @@
         return false;
     }
 
-    // --- Торговля и планета (с вызовом onBuyGood / onSellGood) ---
+    // --- Торговля и планета ---
     function openPlanetMenu(planetNumber) {
         let modal = document.createElement("div");
         modal.className = "modal";
@@ -1060,7 +1061,7 @@
         modal.querySelector("#closePlanetMenu").onclick = () => modal.remove();
     }
 
-    // --- Боты с улучшенной прокачкой ---
+    // --- Боты с ускоренным развитием ---
     function botTradeAndUpgrade(bot) {
         let botShip = getShip(bot.shipLevel);
         let totalCargo = Object.values(bot.cargo).reduce((a,b)=>a+b,0);
@@ -1101,21 +1102,58 @@
 
     function botAI() {
         if (!gameActive) return;
+        // Бои между ботами на одной планете
         let planetsWithBots = new Set();
         for (let bot of bots) planetsWithBots.add(bot.currentPlanet);
         for (let planet of planetsWithBots) {
             let botsOnPlanet = bots.filter(b => b.currentPlanet === planet);
             if (botsOnPlanet.length < 2) continue;
+            // Сортируем по силе
             botsOnPlanet.sort((a,b) => getTotalPower(b) - getTotalPower(a));
-            resolveCombat(botsOnPlanet[0], botsOnPlanet[1], false);
+            // Атака только если сила атакующего > силы защищающегося на 10%
+            let attacker = botsOnPlanet[0];
+            let defender = botsOnPlanet[1];
+            if (getTotalPower(attacker) > getTotalPower(defender) * 1.1) {
+                resolveCombat(attacker, defender, false);
+                // После боя оба могут быть повреждены, ремонтируем победителя, если есть кредиты
+                if (attacker.hull < 100 && attacker.credits >= (100 - attacker.hull) * 10) {
+                    let needed = 100 - attacker.hull;
+                    attacker.credits -= needed * 10;
+                    attacker.hull = 100;
+                }
+                if (defender.hull < 100 && defender.credits >= (100 - defender.hull) * 10) {
+                    let needed = 100 - defender.hull;
+                    defender.credits -= needed * 10;
+                    defender.hull = 100;
+                }
+            }
         }
+        // Движение и действия каждого бота
         for (let bot of bots) {
-            if (Date.now() - (bot.lastMoveTime||0) >= BOT_MOVE_INTERVAL_MS) {
+            let now = Date.now();
+            let nextMoveDelay = Math.floor(Math.random() * (BOT_MOVE_INTERVAL_MAX - BOT_MOVE_INTERVAL_MIN + 1) + BOT_MOVE_INTERVAL_MIN);
+            if (now - (bot.lastMoveTime||0) >= nextMoveDelay) {
+                // Взаимодействие с игроком
                 if (!player.isDead && player.currentPlanet === bot.currentPlanet && Date.now() > player.immunityUntil && Math.abs(player.level - bot.level) <= 1) {
                     let playerPower = getTotalPower(player);
                     let botPower = getTotalPower(bot);
-                    if (botPower > playerPower * 0.8 && bot.hull > 50) { fightWithBot(bot); if (!bots.find(b=>b.id===bot.id)) continue; }
-                    else { let dir = Math.random()<0.5?-1:1; let newPlanet = bot.currentPlanet + dir; if (newPlanet < 1) newPlanet = PLANET_COUNT; if (newPlanet > PLANET_COUNT) newPlanet = 1; bot.currentPlanet = newPlanet; addLogToGame(`${bot.name} отступил на #${newPlanet}`, "warning"); }
+                    if (botPower > playerPower * 1.1 && bot.hull > 50) { 
+                        fightWithBot(bot); 
+                        if (!bots.find(b=>b.id===bot.id)) continue;
+                        // После боя ремонт, если нужно
+                        if (bot.hull < 100 && bot.credits >= (100 - bot.hull) * 10) {
+                            let needed = 100 - bot.hull;
+                            bot.credits -= needed * 10;
+                            bot.hull = 100;
+                        }
+                    } else { 
+                        let dir = Math.random()<0.5?-1:1; 
+                        let newPlanet = bot.currentPlanet + dir; 
+                        if (newPlanet < 1) newPlanet = PLANET_COUNT; 
+                        if (newPlanet > PLANET_COUNT) newPlanet = 1; 
+                        bot.currentPlanet = newPlanet; 
+                        addLogToGame(`${bot.name} отступил на #${newPlanet}`, "warning"); 
+                    }
                 } else {
                     let dir = Math.random()<0.5?-1:1;
                     let newPlanet = bot.currentPlanet + dir;
@@ -1123,7 +1161,8 @@
                     if (newPlanet > PLANET_COUNT) newPlanet = 1;
                     bot.currentPlanet = newPlanet;
                 }
-                bot.lastMoveTime = Date.now();
+                bot.lastMoveTime = now;
+                // Генерация ресурсов при движении
                 if (bot.hasSSGenerator) bot.strangePower += 2;
                 if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); bot.darkMatter += tm; }
                 if (bot.hasTMHarvester) bot.darkMatter++;
@@ -1148,7 +1187,10 @@
         saveGame();
     }
 
-    function startBotAI() { if (botInterval) clearInterval(botInterval); botInterval = setInterval(botAI, 5000); }
+    function startBotAI() { 
+        if (botInterval) clearInterval(botInterval); 
+        botInterval = setInterval(botAI, 2000); // Запускаем каждые 2 секунды, но реальные интервалы движения внутри botAI
+    }
     function scheduleBotCreation() { if (botCreationTimeout) clearTimeout(botCreationTimeout); botCreationTimeout = setTimeout(() => { if (bots.filter(b => b.level === 1).length < 20) createBot(1, 0); scheduleBotCreation(); }, BOT_CREATE_INTERVAL_MS); }
 
     // Магазин (табы)
@@ -1252,10 +1294,10 @@
             document.getElementById("dockContent").innerHTML = `<p>${text}</p>`;
         };
         document.getElementById("dockMenuBtn").onclick = () => { 
-            // Выход в главное меню, сохраняем флаг inDock
             modal.remove(); 
             currentDockModal = null; 
-            // НЕ сбрасываем player.inDock — он остаётся true
+            // Сохраняем флаг, что игрок был в доке
+            player.inDock = true;
             gameActive = false; 
             if (botInterval) clearInterval(botInterval); 
             if (botCreationTimeout) clearTimeout(botCreationTimeout); 
@@ -1280,8 +1322,8 @@
         document.getElementById("rankingList").innerHTML = html;
     }
 
-    // Экспорт/Импорт
-    function exportSave() {
+    // Сохранение/Загрузка игры через файл
+    function saveGameToFile() {
         let saveData = localStorage.getItem("starNomadFull");
         if (!saveData) { alert("Нет сохранения."); return; }
         let blob = new Blob([saveData], {type: "application/json"});
@@ -1291,9 +1333,9 @@
         a.download = "star_nomad_save.json";
         a.click();
         URL.revokeObjectURL(url);
-        alert("Сохранение экспортировано.");
+        alert("Игра сохранена в файл.");
     }
-    function importSave() {
+    function loadGameFromFile() {
         let input = document.createElement("input");
         input.type = "file";
         input.accept = "application/json";
@@ -1305,9 +1347,9 @@
                 try {
                     let data = JSON.parse(ev.target.result);
                     localStorage.setItem("starNomadFull", JSON.stringify(data));
-                    alert("Сохранение импортировано. Перезагрузите страницу.");
+                    alert("Игра загружена. Перезагрузите страницу.");
                     location.reload();
-                } catch (err) { alert("Ошибка импорта."); }
+                } catch (err) { alert("Ошибка загрузки файла."); }
             };
             reader.readAsText(file);
         };
@@ -1383,8 +1425,8 @@
         document.getElementById("newGameBtn").onclick = () => { if (!player.isDead) { alert("Новая игра только после гибели."); return; } createNewPlayerInCurrentWorld(); player.isDead = false; document.getElementById("continueBtn").disabled = false; document.getElementById("newGameBtn").disabled = true; updateRanking(); if (gameActive) { gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); } };
         document.getElementById("shopBtn").onclick = () => openShipShopModal();
         document.getElementById("rankingBtn").onclick = () => { document.getElementById("rankingPanel").classList.toggle("hidden"); updateRanking(); };
-        document.getElementById("exportBtn").onclick = () => exportSave();
-        document.getElementById("importBtn").onclick = () => importSave();
+        document.getElementById("saveGameBtn").onclick = () => saveGameToFile();
+        document.getElementById("loadGameBtn").onclick = () => loadGameFromFile();
         document.getElementById("exitBtn").onclick = () => { saveGame(); alert("Игра сохранена."); };
         document.getElementById("leftBtn").onclick = () => move(-1);
         document.getElementById("rightBtn").onclick = () => move(1);
