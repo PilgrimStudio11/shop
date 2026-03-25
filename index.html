@@ -47,6 +47,8 @@
         .dock-actions { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
         .dock-log { background: #02070f; border-radius: 24px; height: 150px; overflow-y: auto; padding: 12px; font-size: 12px; border: 1px solid #1f4868; color: #c2dcff; text-align: left; margin-top: 15px; }
         .dock-log .log-entry { margin-bottom: 4px; border-left: 2px solid #2d7f9e; }
+        .menu-log { margin-top: 20px; background: #02070f; border-radius: 24px; height: 150px; overflow-y: auto; padding: 12px; font-size: 12px; border: 1px solid #1f4868; color: #c2dcff; }
+        .menu-log .log-entry { margin-bottom: 4px; border-left: 2px solid #2d7f9e; }
     </style>
 </head>
 <body>
@@ -72,6 +74,9 @@
             <h3>🔧 Модули</h3>
             <div id="modulesList"></div>
             <div class="modal-buttons"><button id="closeShopBtn">Закрыть</button></div>
+        </div>
+        <div class="menu-log" id="menuLogBox">
+            <div class="log-entry">⚡ Система готова. Нажмите «Продолжить».</div>
         </div>
     </div>
 
@@ -374,6 +379,19 @@
         logDiv.appendChild(entry);
         entry.scrollIntoView({ behavior: "smooth", block: "nearest" });
         while(logDiv.children.length > 50) logDiv.removeChild(logDiv.firstChild);
+        // Также дублируем в ленту меню
+        let menuLog = document.getElementById("menuLogBox");
+        if (menuLog && !gameActive) {
+            let menuEntry = document.createElement("div"); menuEntry.className = "log-entry";
+            if (type==="combat") menuEntry.classList.add("combat");
+            if (type==="success") menuEntry.classList.add("success");
+            if (type==="warning") menuEntry.classList.add("warning");
+            if (type==="mission") menuEntry.classList.add("mission");
+            menuEntry.innerText = msg;
+            menuLog.appendChild(menuEntry);
+            menuEntry.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            while(menuLog.children.length > 50) menuLog.removeChild(menuLog.firstChild);
+        }
     }
     function addLogToDock(msg, type="normal") {
         if (!dockModal) return;
@@ -906,27 +924,27 @@
         document.getElementById("closeShopBtn").onclick = () => shopDiv.classList.add("hidden");
     }
 
-    // ------------------- РЕЙТИНГ -------------------
+    // ------------------- РЕЙТИНГ (русская таблица) -------------------
     function updateRanking() {
         let all = [
             { name: "⭐ ВЫ", level: player.level, power: getEffectivePower(player), wins: player.wins },
             ...bots.map(b => ({ name: b.name, level: b.level, power: getEffectivePower(b), wins: b.wins }))
         ];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表格
+        let html = `<table>
             <thead>
-                <tr><th>Пилот</th><th>Уровень</th><th>Сила</th><th>Победы</th>养老
+                <tr><th>Пилот</th><th>Уровень</th><th>Сила</th><th>Победы</th>\
             </thead>
             <tbody>`;
         all.forEach(p => {
-            html += `运转
-                <td>${p.name}运转
-                <td>${p.level}运转
-                <td>${formatPower(p.power)}运转
-                <td>${p.wins}运转
+            html += `<tr>
+                <td>${p.name}</td>
+                <td>${p.level}</td>
+                <td>${formatPower(p.power)}</td>
+                <td>${p.wins}</td>
             </tr>`;
         });
-        html += `</tbody>${'</table>'}<p>Всего ботов: ${bots.length}</p>`;
+        html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
     }
 
