@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Звездные войны — Торговая Империя</title>
     <style>
+        /* ... (стили без изменений) ... */
         * {
             box-sizing: border-box;
             user-select: none;
@@ -39,7 +40,7 @@
             border: 1px solid #2e6f97;
             margin: 4px;
         }
-        button:hover {
+        button:hover:not(:disabled) {
             background: #1d3f5a;
             transform: scale(0.97);
         }
@@ -259,6 +260,24 @@
             border: 1px solid #1f4868;
             margin-top: 10px;
         }
+        .tab-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #2a577a;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 8px 20px;
+            margin: 0;
+            border-bottom: 2px solid transparent;
+        }
+        .tab-btn.active {
+            border-bottom-color: #ffcf6e;
+            color: #ffcf6e;
+        }
     </style>
 </head>
 <body>
@@ -280,10 +299,12 @@
             <div id="rankingList"></div>
         </div>
         <div id="shopPanel" class="hidden" style="background: #03070faa; border-radius: 24px; padding: 15px;">
-            <h3>🛸 Корабли</h3>
-            <div id="shopList"></div>
-            <h3>🔧 Модули</h3>
-            <div id="modulesList"></div>
+            <div class="tab-bar">
+                <button id="tabShipsBtn" class="tab-btn active">🛸 Корабли</button>
+                <button id="tabModulesBtn" class="tab-btn">🔧 Модули</button>
+            </div>
+            <div id="shopShipsList"></div>
+            <div id="shopModulesList" class="hidden"></div>
             <div class="modal-buttons"><button id="closeShopBtn">Закрыть</button></div>
         </div>
     </div>
@@ -348,7 +369,7 @@
     const PLANET_PRICE_BASE = 10000;
     const MODULE_PLANET_COST = 10000;
     const PLANET_INCOME_PERCENT = 0.1;
-    const TM_GENERATOR_RATE = 10; // в минуту
+    const TM_GENERATOR_RATE = 10;
 
     const GOODS = [
         { id: "gold", name: "Золото", baseBuy: 100, baseSell: 100, spread: 30, cargoSpace: 1, rocket: false },
@@ -358,15 +379,25 @@
         { id: "oil", name: "Нефть", baseBuy: 60, baseSell: 60, spread: 20, cargoSpace: 1, rocket: false }
     ];
 
+    // Генерация кораблей: первые 4 — экспоненциально (оригинал), с 5-го — линейно
     function generateShips() {
         const ships = [];
         for (let i = 1; i <= 21; i++) {
-            let power = 20 * Math.pow(2, i-1);
-            let cargo = 100 * Math.pow(2, i-1);
-            let fuelCap = 100 * Math.pow(2, i-1);
-            let cost = 50000 * Math.pow(2, i-1);
-            if (i === 1) cost = 50000;
-            ships.push({ level: i, name: "", power: power, cargo: cargo, fuelCap: fuelCap, cost: cost });
+            if (i <= 4) {
+                let power = 20 * Math.pow(2, i-1);
+                let cargo = 100 * Math.pow(2, i-1);
+                let fuelCap = 100 * Math.pow(2, i-1);
+                let cost = 50000 * Math.pow(2, i-1);
+                if (i === 1) cost = 50000;
+                ships.push({ level: i, name: "", power, cargo, fuelCap, cost });
+            } else {
+                // с 5-го уровня: +1000 к силе, грузу и баку; цена *1.5
+                let power = 500 + (i-5) * 1000;
+                let cargo = 1000 + (i-5) * 1000;
+                let fuelCap = 1000 + (i-5) * 1000;
+                let cost = 100000 * Math.pow(1.5, i-5);
+                ships.push({ level: i, name: "", power, cargo, fuelCap, cost });
+            }
         }
         const names = [
             "Странник", "Искатель", "Пилигрим", "Компас", "Орион", "Вега", "Сириус", "Альтаир", "Поллукс", "Регул",
@@ -379,7 +410,7 @@
     const SHIPS = generateShips();
     function getShip(level) { return SHIPS[Math.min(level-1, 20)]; }
 
-    // Глобальное состояние
+    // Глобальное состояние (без изменений)
     let player = {
         credits: START_CREDITS,
         cargo: {},
@@ -394,7 +425,8 @@
         isDead: false,
         immunityUntil: 0,
         hasTMHarvester: false,
-        hasSSGenerator: false      // новый модуль +5 СС за перелёт
+        hasSSGenerator: false,
+        inDock: false
     };
     GOODS.forEach(g => { player.cargo[g.id] = 0; });
 
@@ -410,13 +442,13 @@
     let botInterval = null;
     let botCreationTimeout = null;
     let currentDockModal = null;
+    let isRestoringDock = false;
 
-    // Планеты: владельцы, модули, доход, ТМ
-    let planetOwners = []; // owner: null, "player", или botId
+    let planetOwners = [];
     let planetPrevOwnersCount = [];
     let planetIncome = [];
     let planetTM = [];
-    let planetModules = []; // { teleport: false, tmGenerator: false }
+    let planetModules = [];
 
     function initPlanets() {
         for (let i = 0; i < PLANET_COUNT; i++) {
@@ -524,7 +556,8 @@
             isDead: false,
             immunityUntil: Date.now() + IMMUNITY_DURATION,
             hasTMHarvester: false,
-            hasSSGenerator: false
+            hasSSGenerator: false,
+            inDock: false
         };
         GOODS.forEach(g => { player.cargo[g.id] = 0; });
         addLogToGame(`Новый корабль создан! Иммунитет на ${IMMUNITY_DURATION/60000} мин.`, "success");
@@ -585,7 +618,7 @@
         return effective * hullPercent;
     }
 
-    // --- Функции владения планетами ---
+    // Функции владения планетами (без изменений)
     function canBuyPlanet(planetIdx, buyerLevel, buyerIsPlayer) {
         let owner = planetOwners[planetIdx];
         if (owner === null) return true;
@@ -593,11 +626,7 @@
         if (ownerLevel === undefined) return true;
         return Math.abs(buyerLevel - ownerLevel) <= 1;
     }
-
-    function getPlanetPrice(planetIdx) {
-        return PLANET_PRICE_BASE + (planetPrevOwnersCount[planetIdx] || 0) * 5000;
-    }
-
+    function getPlanetPrice(planetIdx) { return PLANET_PRICE_BASE + (planetPrevOwnersCount[planetIdx] || 0) * 5000; }
     function buyPlanet(planetIdx, buyer, isPlayer) {
         let price = getPlanetPrice(planetIdx);
         if (buyer.credits < price) return false;
@@ -611,7 +640,6 @@
         addLogToGame(`${isPlayer ? "Вы" : buyer.name} купил(и) планету #${planetIdx+1} за ${price}💰`, "success");
         return true;
     }
-
     function installPlanetModule(planetIdx, moduleType, isPlayer, entity) {
         if (planetOwners[planetIdx] !== (isPlayer ? "player" : entity.id)) return false;
         if (entity.credits < MODULE_PLANET_COST) return false;
@@ -623,77 +651,36 @@
         addLogToGame(`${isPlayer ? "Вы" : entity.name} установил(а) модуль ${moduleType === "teleport" ? "телепортации" : "генератора ТМ"} на планету #${planetIdx+1}`, "success");
         return true;
     }
-
     function collectPlanetIncome(planetIdx, isPlayer, entity) {
         if (planetOwners[planetIdx] !== (isPlayer ? "player" : entity.id)) return 0;
         let amount = planetIncome[planetIdx];
-        if (amount > 0) {
-            entity.credits += amount;
-            planetIncome[planetIdx] = 0;
-            addLogToGame(`${isPlayer ? "Вы" : entity.name} собрал(а) ${amount}💰 с планеты #${planetIdx+1}`, "success");
-        }
+        if (amount > 0) { entity.credits += amount; planetIncome[planetIdx] = 0; addLogToGame(`${isPlayer ? "Вы" : entity.name} собрал(а) ${amount}💰 с планеты #${planetIdx+1}`, "success"); }
         return amount;
     }
-
     function collectAllIncome(isPlayer, entity) {
         let total = 0;
-        for (let i=0; i<PLANET_COUNT; i++) {
-            if (planetOwners[i] === (isPlayer ? "player" : entity.id)) {
-                total += planetIncome[i];
-                planetIncome[i] = 0;
-            }
-        }
-        if (total > 0) {
-            entity.credits += total;
-            addLogToGame(`${isPlayer ? "Вы" : entity.name} собрали всю прибыль: ${total}💰`, "success");
-        }
+        for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === (isPlayer ? "player" : entity.id)) { total += planetIncome[i]; planetIncome[i] = 0; }
+        if (total > 0) { entity.credits += total; addLogToGame(`${isPlayer ? "Вы" : entity.name} собрали всю прибыль: ${total}💰`, "success"); }
         return total;
     }
-
     function collectTMFromPlanets(isPlayer, entity) {
         let total = 0;
-        for (let i=0; i<PLANET_COUNT; i++) {
-            if (planetOwners[i] === (isPlayer ? "player" : entity.id) && planetModules[i].tmGenerator) {
-                total += planetTM[i];
-                planetTM[i] = 0;
-            }
-        }
-        if (total > 0) {
-            entity.darkMatter += total;
-            addLogToGame(`${isPlayer ? "Вы" : entity.name} собрали ${total}🌑 ТМ с генераторов`, "success");
-        }
+        for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === (isPlayer ? "player" : entity.id) && planetModules[i].tmGenerator) { total += planetTM[i]; planetTM[i] = 0; }
+        if (total > 0) { entity.darkMatter += total; addLogToGame(`${isPlayer ? "Вы" : entity.name} собрали ${total}🌑 ТМ с генераторов`, "success"); }
         return total;
     }
-
     function addIncomeToPlanet(planetIdx, amount) {
         let owner = planetOwners[planetIdx];
-        if (owner !== null) {
-            let incomeAdd = Math.floor(amount * PLANET_INCOME_PERCENT);
-            if (incomeAdd > 0) planetIncome[planetIdx] += incomeAdd;
-        }
+        if (owner !== null) { let incomeAdd = Math.floor(amount * PLANET_INCOME_PERCENT); if (incomeAdd > 0) planetIncome[planetIdx] += incomeAdd; }
     }
-
     function updatePlanetTMGeneration(deltaMinutes) {
-        for (let i=0; i<PLANET_COUNT; i++) {
-            if (planetModules[i].tmGenerator && planetOwners[i] !== null) {
-                let generated = Math.floor(deltaMinutes * TM_GENERATOR_RATE);
-                if (generated > 0) planetTM[i] += generated;
-            }
-        }
+        for (let i=0; i<PLANET_COUNT; i++) if (planetModules[i].tmGenerator && planetOwners[i] !== null) { let generated = Math.floor(deltaMinutes * TM_GENERATOR_RATE); if (generated > 0) planetTM[i] += generated; }
     }
-
     function releaseBotPlanets(botId) {
-        for (let i=0; i<PLANET_COUNT; i++) {
-            if (planetOwners[i] === botId) {
-                planetOwners[i] = null;
-                planetModules[i] = { teleport: false, tmGenerator: false };
-                planetIncome[i] = 0;
-                planetTM[i] = 0;
-            }
-        }
+        for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === botId) { planetOwners[i] = null; planetModules[i] = { teleport: false, tmGenerator: false }; planetIncome[i] = 0; planetTM[i] = 0; }
     }
 
-    // --- Боевая система с расходом ресурсов ---
+    // Боевая система (без изменений)
     function resolveCombat(attacker, defender, isPlayerAttacker) {
         let powerA = getTotalPower(attacker);
         let powerB = getTotalPower(defender);
@@ -701,62 +688,23 @@
         let winnerIsAttacker = (powerA >= powerB);
         let winner = winnerIsAttacker ? attacker : defender;
         let loser = winnerIsAttacker ? defender : attacker;
-        
-        // Расход ресурсов у победителя (в зависимости от разницы)
-        let usedRockets = 0;
-        let usedTM = 0;
-        let hullDamage = 0;
-        
-        // Сначала пытаемся поглотить разницу ракетами и ТМ у победителя
+        let usedRockets = 0, usedTM = 0, hullDamage = 0;
         let remainingDiff = diff;
         if (winner.cargo.rockets) {
             let rocketPower = (winner.cargo.rockets || 0) * 0.5;
-            if (rocketPower >= remainingDiff) {
-                usedRockets = Math.ceil(remainingDiff / 0.5);
-                winner.cargo.rockets -= usedRockets;
-                remainingDiff = 0;
-            } else {
-                usedRockets = winner.cargo.rockets;
-                remainingDiff -= rocketPower;
-                winner.cargo.rockets = 0;
-            }
+            if (rocketPower >= remainingDiff) { usedRockets = Math.ceil(remainingDiff / 0.5); winner.cargo.rockets -= usedRockets; remainingDiff = 0; }
+            else { usedRockets = winner.cargo.rockets; remainingDiff -= rocketPower; winner.cargo.rockets = 0; }
         }
         if (remainingDiff > 0 && winner.darkMatter) {
             let tmPower = (winner.darkMatter || 0) / 10000;
-            if (tmPower >= remainingDiff) {
-                usedTM = remainingDiff * 10000;
-                winner.darkMatter -= usedTM;
-                remainingDiff = 0;
-            } else {
-                usedTM = winner.darkMatter;
-                remainingDiff -= tmPower;
-                winner.darkMatter = 0;
-            }
+            if (tmPower >= remainingDiff) { usedTM = remainingDiff * 10000; winner.darkMatter -= usedTM; remainingDiff = 0; }
+            else { usedTM = winner.darkMatter; remainingDiff -= tmPower; winner.darkMatter = 0; }
         }
-        if (remainingDiff > 0) {
-            // Наносим урон по прочности
-            let maxHullPower = getShip(winner.shipLevel).power;
-            hullDamage = (remainingDiff / maxHullPower) * 100;
-            winner.hull -= hullDamage;
-            if (winner.hull < 0) winner.hull = 0;
-        }
-        
-        // Если победитель уничтожен, он проигрывает
-        if (winner.hull <= 0) {
-            // Победитель фактически проиграл из-за своих же расходов? Меняем победителя
-            winnerIsAttacker = !winnerIsAttacker;
-            winner = winnerIsAttacker ? attacker : defender;
-            loser = winnerIsAttacker ? defender : attacker;
-            // У победителя здоровье сбрасываем до 1 (чтобы не было 0)
-            winner.hull = Math.max(1, winner.hull);
-            // Пересчитываем расходы для нового победителя (упрощённо)
-        }
-        
-        // Захват кредитов и груза
+        if (remainingDiff > 0) { let maxHullPower = getShip(winner.shipLevel).power; hullDamage = (remainingDiff / maxHullPower) * 100; winner.hull -= hullDamage; if (winner.hull < 0) winner.hull = 0; }
+        if (winner.hull <= 0) { winnerIsAttacker = !winnerIsAttacker; winner = winnerIsAttacker ? attacker : defender; loser = winnerIsAttacker ? defender : attacker; winner.hull = Math.max(1, winner.hull); }
         let stolenCredits = Math.floor(loser.credits);
         winner.credits += stolenCredits;
         loser.credits = 0;
-        
         let stolenGoods = [];
         for (let g of GOODS) {
             let loserQty = loser.cargo[g.id] || 0;
@@ -766,114 +714,48 @@
                 if (stolen > 0) {
                     let cargoSpace = getShip(winner.shipLevel).cargo;
                     let currentCargo = Object.values(winner.cargo).reduce((a,b)=>a+b,0);
-                    if (currentCargo + stolen * g.cargoSpace <= cargoSpace) {
-                        winner.cargo[g.id] = (winner.cargo[g.id] || 0) + stolen;
-                        stolenGoods.push(`${g.name}: ${stolen}`);
-                    } else {
-                        let maxSpace = Math.floor((cargoSpace - currentCargo) / g.cargoSpace);
-                        let actualStolen = Math.min(stolen, maxSpace);
-                        if (actualStolen > 0) {
-                            winner.cargo[g.id] = (winner.cargo[g.id] || 0) + actualStolen;
-                            stolenGoods.push(`${g.name}: ${actualStolen}`);
-                        }
-                    }
+                    if (currentCargo + stolen * g.cargoSpace <= cargoSpace) { winner.cargo[g.id] = (winner.cargo[g.id] || 0) + stolen; stolenGoods.push(`${g.name}: ${stolen}`); }
+                    else { let maxSpace = Math.floor((cargoSpace - currentCargo) / g.cargoSpace); let actualStolen = Math.min(stolen, maxSpace); if (actualStolen > 0) { winner.cargo[g.id] = (winner.cargo[g.id] || 0) + actualStolen; stolenGoods.push(`${g.name}: ${actualStolen}`); } }
                     loser.cargo[g.id] -= stolen;
                 }
             }
         }
         winner.wins = (winner.wins || 0) + 1;
         winner.level = getLevelFromWins(winner.wins);
-        
-        if (winner === player) {
-            player.level = winner.level;
-            addLogToGame(`Победа над ${loser.name}! Захвачено ${stolenCredits}💰 и ${stolenGoods.join(', ')}. Расход: ракеты ${usedRockets}, ТМ ${Math.floor(usedTM)}, прочность -${Math.floor(hullDamage)}%`, "combat");
-        } else {
-            addLogToGame(`${winner.name} (ур.${winner.level}) уничтожил ${loser.name} на планете #${loser.currentPlanet}.`, "combat");
-        }
-        if (loser !== player) {
-            bots = bots.filter(b => b.id !== loser.id);
-            releaseBotPlanets(loser.id);
-        }
+        if (winner === player) { player.level = winner.level; addLogToGame(`Победа над ${loser.name}! Захвачено ${stolenCredits}💰 и ${stolenGoods.join(', ')}. Расход: ракеты ${usedRockets}, ТМ ${Math.floor(usedTM)}, прочность -${Math.floor(hullDamage)}%`, "combat"); }
+        else { addLogToGame(`${winner.name} (ур.${winner.level}) уничтожил ${loser.name} на планете #${loser.currentPlanet}.`, "combat"); }
+        if (loser !== player) { bots = bots.filter(b => b.id !== loser.id); releaseBotPlanets(loser.id); }
         return winnerIsAttacker;
     }
-
     function fightWithBot(bot) {
         if (player.isDead) return;
-        // Проверка разницы уровней (не более 1)
-        if (Math.abs(player.level - bot.level) > 1) {
-            addLogToGame(`Вы не можете атаковать ${bot.name} (разница уровней больше 1)`, "warning");
-            return;
-        }
-        let result = resolveCombat(player, bot, true);
-        if (player.hull <= 0) {
-            playerDefeated();
-        }
-        updateUI();
-        saveGame();
+        if (Math.abs(player.level - bot.level) > 1) { addLogToGame(`Вы не можете атаковать ${bot.name} (разница уровней больше 1)`, "warning"); return; }
+        resolveCombat(player, bot, true);
+        if (player.hull <= 0) playerDefeated();
+        updateUI(); saveGame();
     }
-
     function playerDefeated() {
         addLogToGame(`💀 Ваш корабль разрушен! Все планеты потеряны.`, "combat");
-        for (let i=0; i<PLANET_COUNT; i++) {
-            if (planetOwners[i] === "player") {
-                planetOwners[i] = null;
-                planetModules[i] = { teleport: false, tmGenerator: false };
-                planetIncome[i] = 0;
-                planetTM[i] = 0;
-            }
-        }
-        player.isDead = true;
+        for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === "player") { planetOwners[i] = null; planetModules[i] = { teleport: false, tmGenerator: false }; planetIncome[i] = 0; planetTM[i] = 0; }
+        player.isDead = true; player.inDock = false;
         saveGame();
-        if (gameActive) {
-            gameActive = false;
-            if (botInterval) clearInterval(botInterval);
-            if (botCreationTimeout) clearTimeout(botCreationTimeout);
-            document.getElementById("menuScreen").style.display = "block";
-            document.getElementById("gameScreen").classList.add("hidden");
-            updateRanking();
-            document.getElementById("continueBtn").disabled = true;
-            document.getElementById("newGameBtn").disabled = false;
-        }
+        if (gameActive) { gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRanking(); document.getElementById("continueBtn").disabled = true; document.getElementById("newGameBtn").disabled = false; }
     }
-
     function encounterWithBots() {
         let botsHere = bots.filter(b => b.currentPlanet === player.currentPlanet);
         if (botsHere.length === 0) return;
         let bot = botsHere[0];
-        let immunityActive = (Date.now() < player.immunityUntil);
-        if (immunityActive) {
-            addLogToGame(`🛡️ Иммунитет активен, бот ${bot.name} не атакует.`, "warning");
-            return;
-        }
-        // Проверка разницы уровней для боя
-        if (Math.abs(player.level - bot.level) > 1) {
-            addLogToGame(`Вы встретили ${bot.name} (ур.${bot.level}), но разница уровней слишком велика для боя.`, "warning");
-            return;
-        }
+        if (Date.now() < player.immunityUntil) { addLogToGame(`🛡️ Иммунитет активен, бот ${bot.name} не атакует.`, "warning"); return; }
+        if (Math.abs(player.level - bot.level) > 1) { addLogToGame(`Вы встретили ${bot.name} (ур.${bot.level}), но разница уровней слишком велика для боя.`, "warning"); return; }
         let modal = document.createElement("div");
         modal.className = "modal";
-        modal.innerHTML = `<div class="modal-content">
-            <h3>Встреча с ${bot.name}</h3>
-            <p>Уровень ${bot.level}, сила ${getTotalPower(bot).toFixed(4)}</p>
-            <p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p>
-            <p>Ваша сила: ${getTotalPower(player).toFixed(4)}</p>
-            <div class="modal-buttons">
-                <button id="attackBtn">⚔️ АТАКОВАТЬ</button>
-                <button id="retreatBtn">🏃 ОТСТУПИТЬ</button>
-            </div>
-        </div>`;
+        modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${getTotalPower(bot).toFixed(4)}</p><p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>Ваша сила: ${getTotalPower(player).toFixed(4)}</p><div class="modal-buttons"><button id="attackBtn">⚔️ АТАКОВАТЬ</button><button id="retreatBtn">🏃 ОТСТУПИТЬ</button></div></div>`;
         document.body.appendChild(modal);
-        modal.querySelector("#attackBtn").onclick = () => {
-            modal.remove();
-            fightWithBot(bot);
-        };
-        modal.querySelector("#retreatBtn").onclick = () => {
-            modal.remove();
-            addLogToGame(`Вы отступили от ${bot.name}.`, "warning");
-        };
+        modal.querySelector("#attackBtn").onclick = () => { modal.remove(); fightWithBot(bot); };
+        modal.querySelector("#retreatBtn").onclick = () => { modal.remove(); addLogToGame(`Вы отступили от ${bot.name}.`, "warning"); };
     }
 
-    // --- Перемещение и гиперпрыжки ---
+    // Перемещение (без изменений)
     function move(delta) {
         if (player.isDead) { addLogToGame("Ваш корабль уничтожен. Начните новую игру.", "warning"); return; }
         if (player.fuel <= 0) { addLogToGame("Нет топлива! Заправьтесь.", "warning"); return; }
@@ -883,38 +765,32 @@
         player.currentPlanet = newPlanet;
         player.fuel--;
         player.strangePower++;
-        if (player.hasSSGenerator) {
-            player.strangePower += 5;
-            addLogToGame(`Генератор СС: +5 СС`, "success");
-        }
-        if (player.hasTMHarvester) {
-            player.darkMatter++;
-            addLogToGame(`Модуль добычи: +1 ТМ`, "success");
-        }
-        if (Math.random() < DARK_MATTER_CHANCE) {
-            let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]);
-            player.darkMatter += tm;
-            addLogToGame(`Найдена тёмная материя! +${tm} ТМ`, "success");
-        }
+        if (player.hasSSGenerator) { player.strangePower += 5; addLogToGame(`Генератор СС: +5 СС`, "success"); }
+        if (player.hasTMHarvester) { player.darkMatter++; addLogToGame(`Модуль добычи: +1 ТМ`, "success"); }
+        if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); player.darkMatter += tm; addLogToGame(`Найдена тёмная материя! +${tm} ТМ`, "success"); }
         updateUI();
         encounterWithBots();
         tryCompleteMission(player, true);
         saveGame();
     }
 
+    // ГИПЕРПРЫЖОК С УЧЁТОМ НАПРАВЛЕНИЯ
     function hyperJump(direction) {
         if (player.isDead) { addLogToGame("Ваш корабль уничтожен.", "warning"); return; }
-        if (player.strangePower < HYPER_COST) {
-            addLogToGame(`Недостаточно Силы Странника (нужно ${HYPER_COST})`, "warning");
-            return;
+        if (player.strangePower < HYPER_COST) { addLogToGame(`Недостаточно Силы Странника (нужно ${HYPER_COST})`, "warning"); return; }
+        let current = player.currentPlanet;
+        let available = [];
+        if (direction === -1) { // лево
+            for (let i = 1; i < current; i++) available.push(i);
+        } else { // право
+            for (let i = current+1; i <= PLANET_COUNT; i++) available.push(i);
         }
-        let newPlanet;
-        do {
-            newPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1;
-        } while (newPlanet === player.currentPlanet);
+        if (available.length === 0) { addLogToGame("В этом направлении нет планет для гиперпрыжка!", "warning"); return; }
+        let randomIndex = Math.floor(Math.random() * available.length);
+        let newPlanet = available[randomIndex];
         player.currentPlanet = newPlanet;
         player.strangePower -= HYPER_COST;
-        addLogToGame(`Гиперпрыжок! Вы на планете #${player.currentPlanet}`, "success");
+        addLogToGame(`Гиперпрыжок ${direction === -1 ? "налево" : "направо"}! Вы на планете #${player.currentPlanet}`, "success");
         updateUI();
         encounterWithBots();
         tryCompleteMission(player, true);
@@ -941,7 +817,7 @@
         
         let html = `<div class="modal-content"><h3>Планета #${planetNumber}</h3>`;
         html += `<p>Владелец: <b>${ownerName}</b></p>`;
-        html += `<div><b>Установленные модули:</b> `;
+        html += `<div><b>Модули планеты:</b> `;
         if (modules.teleport) html += `🌀 Телепорт `;
         if (modules.tmGenerator) html += `⚡ Генератор ТМ `;
         if (!modules.teleport && !modules.tmGenerator) html += `—`;
@@ -951,10 +827,10 @@
         if (!isOwner && canBuy) {
             html += `<button id="buyPlanetBtn">Купить планету за ${planetPrice}💰</button>`;
         } else if (isOwner) {
-            html += `<button id="installTeleportPlanet">🌀 Установить телепорт (${MODULE_PLANET_COST}💰)</button>
-                     <button id="installTMGenPlanet">⚡ Установить генератор ТМ (${MODULE_PLANET_COST}💰)</button>`;
+            html += `<button id="installTeleportPlanet" ${modules.teleport ? "disabled" : ""}>🌀 Установить телепорт (${MODULE_PLANET_COST}💰)${modules.teleport ? " (установлен)" : ""}</button>
+                     <button id="installTMGenPlanet" ${modules.tmGenerator ? "disabled" : ""}>⚡ Установить генератор ТМ (${MODULE_PLANET_COST}💰)${modules.tmGenerator ? " (установлен)" : ""}</button>`;
             if (modules.teleport) {
-                html += `<button id="teleportToPlanet">🌀 Телепортироваться сюда</button>`;
+                html += `<button id="teleportFromPlanetBtn">🌀 Телепорт на другую планету</button>`;
             }
         }
         html += `</div><div class="trade-row">`;
@@ -994,27 +870,36 @@
             updateUI(); saveGame(); modal.remove(); openPlanetMenu(planetNumber);
         };
         let buyBtn = modal.querySelector("#buyPlanetBtn");
-        if (buyBtn) buyBtn.onclick = () => {
-            if (buyPlanet(planetNumber-1, player, true)) { saveGame(); modal.remove(); openPlanetMenu(planetNumber); }
-            else addLogToGame("Не удалось купить планету.", "warning");
-        };
+        if (buyBtn) buyBtn.onclick = () => { if (buyPlanet(planetNumber-1, player, true)) { saveGame(); modal.remove(); openPlanetMenu(planetNumber); } else addLogToGame("Не удалось купить планету.", "warning"); };
         let installTeleport = modal.querySelector("#installTeleportPlanet");
-        if (installTeleport) installTeleport.onclick = () => {
-            if (installPlanetModule(planetNumber-1, "teleport", true, player)) { saveGame(); modal.remove(); openPlanetMenu(planetNumber); }
-            else addLogToGame("Не удалось установить модуль телепортации.", "warning");
-        };
+        if (installTeleport) installTeleport.onclick = () => { if (installPlanetModule(planetNumber-1, "teleport", true, player)) { saveGame(); modal.remove(); openPlanetMenu(planetNumber); } else addLogToGame("Не удалось установить модуль телепортации.", "warning"); };
         let installTMGen = modal.querySelector("#installTMGenPlanet");
-        if (installTMGen) installTMGen.onclick = () => {
-            if (installPlanetModule(planetNumber-1, "tmGenerator", true, player)) { saveGame(); modal.remove(); openPlanetMenu(planetNumber); }
-            else addLogToGame("Не удалось установить генератор ТМ.", "warning");
-        };
-        let teleportBtn = modal.querySelector("#teleportToPlanet");
+        if (installTMGen) installTMGen.onclick = () => { if (installPlanetModule(planetNumber-1, "tmGenerator", true, player)) { saveGame(); modal.remove(); openPlanetMenu(planetNumber); } else addLogToGame("Не удалось установить генератор ТМ.", "warning"); };
+        let teleportBtn = modal.querySelector("#teleportFromPlanetBtn");
         if (teleportBtn) teleportBtn.onclick = () => {
-            if (modules.teleport) {
-                player.currentPlanet = planetNumber;
-                addLogToGame(`Телепортация на планету #${planetNumber}`, "success");
-                updateUI(); saveGame(); modal.remove();
-            }
+            // Показать список планет игрока, на которых есть телепорт (кроме текущей)
+            let teleports = [];
+            for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === "player" && planetModules[i].teleport && i !== planetNumber-1) teleports.push(i);
+            if (teleports.length === 0) { addLogToGame("Нет других планет с телепортом.", "warning"); return; }
+            let teleportModal = document.createElement("div");
+            teleportModal.className = "modal";
+            let listHtml = "<h3>Выберите планету для телепортации</h3>";
+            for (let idx of teleports) listHtml += `<button class="teleportTargetBtn" data-idx="${idx}">Планета #${idx+1}</button><br>`;
+            listHtml += `<div class="modal-buttons"><button id="cancelTeleport">Отмена</button></div>`;
+            teleportModal.innerHTML = `<div class="modal-content">${listHtml}</div>`;
+            document.body.appendChild(teleportModal);
+            teleportModal.querySelectorAll(".teleportTargetBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let target = parseInt(btn.dataset.idx);
+                    player.currentPlanet = target+1;
+                    addLogToGame(`Телепортация на планету #${target+1}`, "success");
+                    saveGame();
+                    teleportModal.remove();
+                    modal.remove();
+                    updateUI();
+                };
+            });
+            teleportModal.querySelector("#cancelTeleport").onclick = () => teleportModal.remove();
         };
         GOODS.forEach(g => {
             let buyBtn = modal.querySelector(`.buyGood[data-good="${g.id}"]`);
@@ -1053,34 +938,21 @@
         modal.querySelector("#closePlanetMenu").onclick = () => modal.remove();
     }
 
-    // --- Задания ---
+    // Задания (без изменений)
     function generateMission() {
         if (missionCompleted) return;
         if (currentMission && !currentMission.completed) return;
         const good = GOODS[Math.floor(Math.random() * GOODS.length)];
         const qty = Math.floor(Math.random() * 41) + 10;
         let fromPlanet, toPlanet;
-        do {
-            fromPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1;
-            toPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1;
-        } while (fromPlanet === toPlanet);
+        do { fromPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; toPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; } while (fromPlanet === toPlanet);
         const rewardType = Math.random() < 0.5 ? "credits" : "tm";
         const rewardAmount = rewardType === "credits" ? Math.floor(Math.random() * 4001) + 1000 : Math.floor(Math.random() * 51) + 50;
-        currentMission = {
-            good: good.id,
-            goodName: good.name,
-            qty: qty,
-            fromPlanet: fromPlanet,
-            toPlanet: toPlanet,
-            rewardType: rewardType,
-            rewardAmount: rewardAmount,
-            completed: false
-        };
+        currentMission = { good: good.id, goodName: good.name, qty, fromPlanet, toPlanet, rewardType, rewardAmount, completed: false };
         missionCompleted = false;
         addLogToGame(`📡 НОВОЕ ЗАДАНИЕ: купить ${qty} ${good.name} на #${fromPlanet} и доставить на #${toPlanet}. Награда: ${rewardAmount} ${rewardType === "credits" ? "💰" : "🌑 ТМ"}!`, "mission");
         saveGame();
     }
-
     function tryCompleteMission(entity, isPlayer) {
         if (!currentMission || currentMission.completed) return false;
         if (entity.currentPlanet !== currentMission.toPlanet) return false;
@@ -1089,30 +961,19 @@
         currentMission.completed = true;
         missionCompleted = true;
         entity.cargo[currentMission.good] -= currentMission.qty;
-        if (currentMission.rewardType === "credits") {
-            entity.credits += currentMission.rewardAmount;
-            addLogToGame(`${isPlayer ? "Вы" : entity.name} выполнили задание! +${currentMission.rewardAmount}💰`, "success");
-        } else {
-            entity.darkMatter += currentMission.rewardAmount;
-            addLogToGame(`${isPlayer ? "Вы" : entity.name} выполнили задание! +${currentMission.rewardAmount}🌑 ТМ`, "success");
-        }
-        if (!isPlayer) {
-            entity.wins++;
-            entity.level = getLevelFromWins(entity.wins);
-        }
+        if (currentMission.rewardType === "credits") { entity.credits += currentMission.rewardAmount; addLogToGame(`${isPlayer ? "Вы" : entity.name} выполнили задание! +${currentMission.rewardAmount}💰`, "success"); }
+        else { entity.darkMatter += currentMission.rewardAmount; addLogToGame(`${isPlayer ? "Вы" : entity.name} выполнили задание! +${currentMission.rewardAmount}🌑 ТМ`, "success"); }
+        if (!isPlayer) { entity.wins++; entity.level = getLevelFromWins(entity.wins); }
         saveGame();
         return true;
     }
-
     function updateMissionByTimer() {
         const now = Date.now();
         const lastSlot = Math.floor(lastMissionUpdate / MISSION_REFRESH_INTERVAL_MS);
         const currentSlot = Math.floor(now / MISSION_REFRESH_INTERVAL_MS);
         if (currentSlot !== lastSlot) {
             lastMissionUpdate = now;
-            if (currentMission && !currentMission.completed) {
-                addLogToGame("⏰ Время выполнения задания истекло. Новое задание.", "warning");
-            }
+            if (currentMission && !currentMission.completed) addLogToGame("⏰ Время выполнения задания истекло. Новое задание.", "warning");
             currentMission = null;
             missionCompleted = false;
             generateMission();
@@ -1121,145 +982,44 @@
         return false;
     }
 
-    // --- Боты ---
+    // Боты (без изменений, но используют новую генерацию кораблей)
     function botTradeAndUpgrade(bot) {
         let botShip = getShip(bot.shipLevel);
         let totalCargo = Object.values(bot.cargo).reduce((a,b)=>a+b,0);
         let planetIdx = bot.currentPlanet - 1;
         let prices = planetPrices[planetIdx];
         let stocks = planetStocks[planetIdx];
-        // Заправка
-        if (bot.fuel < botShip.fuelCap && bot.credits >= (botShip.fuelCap - bot.fuel) * FUEL_PRICE) {
-            let needed = botShip.fuelCap - bot.fuel;
-            bot.credits -= needed * FUEL_PRICE;
-            bot.fuel = botShip.fuelCap;
-        }
-        // Ремонт
-        if (bot.hull < 100 && bot.credits >= (100 - bot.hull) * 10) {
-            let needed = 100 - bot.hull;
-            bot.credits -= needed * 10;
-            bot.hull = 100;
-        }
-        // Покупка ракет
-        if ((bot.cargo.rockets || 0) < 5 && totalCargo + 5 <= botShip.cargo && bot.credits >= prices.rockets.buy * 5 && stocks.rockets >= 5) {
-            let qty = Math.min(5, Math.floor(bot.credits / prices.rockets.buy), stocks.rockets);
-            if (qty > 0) {
-                bot.credits -= qty * prices.rockets.buy;
-                bot.cargo.rockets = (bot.cargo.rockets || 0) + qty;
-                stocks.rockets -= qty;
-                totalCargo += qty * 5;
-            }
-        }
-        // Покупка товаров
-        for (let g of GOODS) {
-            if (prices[g.id].buy < g.baseBuy && bot.credits >= prices[g.id].buy && totalCargo + g.cargoSpace <= botShip.cargo && stocks[g.id] > 0) {
-                bot.credits -= prices[g.id].buy;
-                bot.cargo[g.id] = (bot.cargo[g.id] || 0) + 1;
-                stocks[g.id]--;
-                totalCargo += g.cargoSpace;
-                break;
-            }
-        }
-        // Продажа товаров
-        for (let g of GOODS) {
-            if (prices[g.id].sell > g.baseBuy && (bot.cargo[g.id] || 0) > 0) {
-                bot.credits += prices[g.id].sell;
-                bot.cargo[g.id]--;
-                stocks[g.id]++;
-                break;
-            }
-        }
-        // Покупка модуля добычи ТМ
-        if (!bot.hasTMHarvester && bot.credits >= MODULE_HARVESTER_COST) {
-            bot.credits -= MODULE_HARVESTER_COST;
-            bot.hasTMHarvester = true;
-            addLogToGame(`${bot.name} купил модуль добычи ТМ!`, "success");
-        }
-        // Покупка генератора СС
-        if (!bot.hasSSGenerator && bot.credits >= MODULE_SS_GENERATOR_COST) {
-            bot.credits -= MODULE_SS_GENERATOR_COST;
-            bot.hasSSGenerator = true;
-            addLogToGame(`${bot.name} купил генератор СС!`, "success");
-        }
-        // Улучшение корабля
-        if (bot.shipLevel < bot.level && bot.credits >= getShip(bot.shipLevel+1).cost) {
-            let newShip = getShip(bot.shipLevel+1);
-            bot.credits -= newShip.cost;
-            bot.shipLevel++;
-            let fuelPercent = bot.fuel / getShip(bot.shipLevel-1).fuelCap;
-            bot.fuel = Math.min(newShip.fuelCap, Math.floor(newShip.fuelCap * fuelPercent));
-            bot.hasTMHarvester = false;
-            bot.hasSSGenerator = false;
-        }
+        if (bot.fuel < botShip.fuelCap && bot.credits >= (botShip.fuelCap - bot.fuel) * FUEL_PRICE) { let needed = botShip.fuelCap - bot.fuel; bot.credits -= needed * FUEL_PRICE; bot.fuel = botShip.fuelCap; }
+        if (bot.hull < 100 && bot.credits >= (100 - bot.hull) * 10) { let needed = 100 - bot.hull; bot.credits -= needed * 10; bot.hull = 100; }
+        if ((bot.cargo.rockets || 0) < 5 && totalCargo + 5 <= botShip.cargo && bot.credits >= prices.rockets.buy * 5 && stocks.rockets >= 5) { let qty = Math.min(5, Math.floor(bot.credits / prices.rockets.buy), stocks.rockets); if (qty > 0) { bot.credits -= qty * prices.rockets.buy; bot.cargo.rockets = (bot.cargo.rockets || 0) + qty; stocks.rockets -= qty; totalCargo += qty * 5; } }
+        for (let g of GOODS) { if (prices[g.id].buy < g.baseBuy && bot.credits >= prices[g.id].buy && totalCargo + g.cargoSpace <= botShip.cargo && stocks[g.id] > 0) { bot.credits -= prices[g.id].buy; bot.cargo[g.id] = (bot.cargo[g.id] || 0) + 1; stocks[g.id]--; totalCargo += g.cargoSpace; break; } }
+        for (let g of GOODS) { if (prices[g.id].sell > g.baseBuy && (bot.cargo[g.id] || 0) > 0) { bot.credits += prices[g.id].sell; bot.cargo[g.id]--; stocks[g.id]++; break; } }
+        if (!bot.hasTMHarvester && bot.credits >= MODULE_HARVESTER_COST) { bot.credits -= MODULE_HARVESTER_COST; bot.hasTMHarvester = true; addLogToGame(`${bot.name} купил модуль добычи ТМ!`, "success"); }
+        if (!bot.hasSSGenerator && bot.credits >= MODULE_SS_GENERATOR_COST) { bot.credits -= MODULE_SS_GENERATOR_COST; bot.hasSSGenerator = true; addLogToGame(`${bot.name} купил генератор СС!`, "success"); }
+        if (bot.shipLevel < bot.level && bot.credits >= getShip(bot.shipLevel+1).cost) { let newShip = getShip(bot.shipLevel+1); bot.credits -= newShip.cost; bot.shipLevel++; let fuelPercent = bot.fuel / getShip(bot.shipLevel-1).fuelCap; bot.fuel = Math.min(newShip.fuelCap, Math.floor(newShip.fuelCap * fuelPercent)); bot.hasTMHarvester = false; bot.hasSSGenerator = false; }
     }
-
     function botAI() {
         if (!gameActive) return;
-        // Бои между ботами
         let planetsWithBots = new Set();
         for (let bot of bots) planetsWithBots.add(bot.currentPlanet);
-        for (let planet of planetsWithBots) {
-            let botsOnPlanet = bots.filter(b => b.currentPlanet === planet);
-            if (botsOnPlanet.length < 2) continue;
-            botsOnPlanet.sort((a,b) => getTotalPower(b) - getTotalPower(a));
-            let attacker = botsOnPlanet[0], defender = botsOnPlanet[1];
-            resolveCombat(attacker, defender, false);
-        }
+        for (let planet of planetsWithBots) { let botsOnPlanet = bots.filter(b => b.currentPlanet === planet); if (botsOnPlanet.length < 2) continue; botsOnPlanet.sort((a,b) => getTotalPower(b) - getTotalPower(a)); resolveCombat(botsOnPlanet[0], botsOnPlanet[1], false); }
         for (let bot of bots) {
             if (Date.now() - (bot.lastMoveTime||0) >= BOT_MOVE_INTERVAL_MS) {
-                // Атака на игрока, если рядом и разница уровней <=1
-                if (!player.isDead && player.currentPlanet === bot.currentPlanet && Date.now() > player.immunityUntil) {
-                    if (Math.abs(player.level - bot.level) <= 1) {
-                        let playerPower = getTotalPower(player);
-                        let botPower = getTotalPower(bot);
-                        if (botPower > playerPower * 0.8 && bot.hull > 50) {
-                            fightWithBot(bot);
-                            if (!bots.find(b=>b.id===bot.id)) continue;
-                        } else {
-                            let dir = Math.random()<0.5?-1:1;
-                            let newPlanet = bot.currentPlanet + dir;
-                            if (newPlanet < 1) newPlanet = PLANET_COUNT;
-                            if (newPlanet > PLANET_COUNT) newPlanet = 1;
-                            bot.currentPlanet = newPlanet;
-                            addLogToGame(`${bot.name} отступил на #${newPlanet}`, "warning");
-                        }
-                    } else {
-                        // Разница больше 1, просто улетаем
-                        let dir = Math.random()<0.5?-1:1;
-                        let newPlanet = bot.currentPlanet + dir;
-                        if (newPlanet < 1) newPlanet = PLANET_COUNT;
-                        if (newPlanet > PLANET_COUNT) newPlanet = 1;
-                        bot.currentPlanet = newPlanet;
-                    }
-                }
-                // Обычное движение
-                let dir = Math.random()<0.5?-1:1;
-                let newPlanet = bot.currentPlanet + dir;
-                if (newPlanet < 1) newPlanet = PLANET_COUNT;
-                if (newPlanet > PLANET_COUNT) newPlanet = 1;
-                bot.currentPlanet = newPlanet;
+                if (!player.isDead && player.currentPlanet === bot.currentPlanet && Date.now() > player.immunityUntil && Math.abs(player.level - bot.level) <= 1) {
+                    let playerPower = getTotalPower(player);
+                    let botPower = getTotalPower(bot);
+                    if (botPower > playerPower * 0.8 && bot.hull > 50) { fightWithBot(bot); if (!bots.find(b=>b.id===bot.id)) continue; }
+                    else { let dir = Math.random()<0.5?-1:1; let newPlanet = bot.currentPlanet + dir; if (newPlanet < 1) newPlanet = PLANET_COUNT; if (newPlanet > PLANET_COUNT) newPlanet = 1; bot.currentPlanet = newPlanet; addLogToGame(`${bot.name} отступил на #${newPlanet}`, "warning"); }
+                } else { let dir = Math.random()<0.5?-1:1; let newPlanet = bot.currentPlanet + dir; if (newPlanet < 1) newPlanet = PLANET_COUNT; if (newPlanet > PLANET_COUNT) newPlanet = 1; bot.currentPlanet = newPlanet; }
                 bot.lastMoveTime = Date.now();
-                // Генерация ресурсов при движении
                 if (bot.hasSSGenerator) bot.strangePower += 5;
-                if (Math.random() < DARK_MATTER_CHANCE) {
-                    let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]);
-                    bot.darkMatter += tm;
-                }
+                if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); bot.darkMatter += tm; }
                 if (bot.hasTMHarvester) bot.darkMatter++;
                 botTradeAndUpgrade(bot);
                 tryCompleteMission(bot, false);
-                // Покупка планеты
                 let planetIdx = bot.currentPlanet-1;
-                if (planetOwners[planetIdx] !== bot.id && canBuyPlanet(planetIdx, bot.level, false) && bot.credits >= getPlanetPrice(planetIdx)) {
-                    buyPlanet(planetIdx, bot, false);
-                }
-                // Установка модулей на свои планеты
-                for (let i=0; i<PLANET_COUNT; i++) {
-                    if (planetOwners[i] === bot.id && Math.random()<0.02 && bot.credits >= MODULE_PLANET_COST) {
-                        if (!planetModules[i].teleport && Math.random()<0.5) installPlanetModule(i, "teleport", false, bot);
-                        else if (!planetModules[i].tmGenerator) installPlanetModule(i, "tmGenerator", false, bot);
-                    }
-                }
+                if (planetOwners[planetIdx] !== bot.id && canBuyPlanet(planetIdx, bot.level, false) && bot.credits >= getPlanetPrice(planetIdx)) buyPlanet(planetIdx, bot, false);
+                for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === bot.id && Math.random()<0.02 && bot.credits >= MODULE_PLANET_COST) { if (!planetModules[i].teleport && Math.random()<0.5) installPlanetModule(i, "teleport", false, bot); else if (!planetModules[i].tmGenerator) installPlanetModule(i, "tmGenerator", false, bot); }
                 collectAllIncome(false, bot);
                 collectTMFromPlanets(false, bot);
                 let newLevel = getLevelFromWins(bot.wins);
@@ -1268,327 +1028,123 @@
         }
         saveGame();
     }
+    function startBotAI() { if (botInterval) clearInterval(botInterval); botInterval = setInterval(botAI, 5000); }
+    function scheduleBotCreation() { if (botCreationTimeout) clearTimeout(botCreationTimeout); botCreationTimeout = setTimeout(() => { if (bots.filter(b => b.level === 1).length < 20) createBot(1, 0); scheduleBotCreation(); }, BOT_CREATE_INTERVAL_MS); }
 
-    function startBotAI() {
-        if (botInterval) clearInterval(botInterval);
-        botInterval = setInterval(botAI, 5000);
-    }
-
-    function scheduleBotCreation() {
-        if (botCreationTimeout) clearTimeout(botCreationTimeout);
-        botCreationTimeout = setTimeout(() => {
-            let level1Count = bots.filter(b => b.level === 1).length;
-            if (level1Count < 20) {
-                createBot(1, 0);
-            }
-            scheduleBotCreation();
-        }, BOT_CREATE_INTERVAL_MS);
-    }
-
-    // --- Магазин (отдельное модальное окно для использования из дока) ---
+    // Магазин с табами (без изменений)
     function openShipShopModal() {
-        let modal = document.createElement("div");
-        modal.className = "modal";
-        let shipsHtml = '';
-        for (let i = 0; i < SHIPS.length; i++) {
-            let ship = SHIPS[i];
-            let available = (ship.level > player.shipLevel && ship.level <= player.level + 1 && player.credits >= ship.cost);
-            let owned = (ship.level === player.shipLevel);
-            shipsHtml += `<div class="shop-item">
-                            <div><b>${ship.name}</b> (ур.${ship.level})<br>
-                            Сила:${ship.power} | Груз:${ship.cargo} | Бак:${ship.fuelCap}<br>
-                            Цена: ${ship.cost}💰</div>
-                            <div>`;
-            if (owned) {
-                shipsHtml += `<button disabled style="background:#1f5a3a;">✓ В собственности</button>`;
-            } else if (available) {
-                shipsHtml += `<button class="buyShipBtnModal" data-level="${ship.level}">Купить за ${ship.cost}💰</button>`;
-            } else {
-                shipsHtml += `<button disabled>🔒 Требуется уровень ${ship.level} и ${ship.cost}💰</button>`;
-            }
-            shipsHtml += `</div></div>`;
-        }
-        let modulesHtml = '';
-        modulesHtml += `<div class="shop-item">
-                            <div><b>Модуль добычи ТМ</b><br>Даёт +1 ТМ за перелёт<br>Цена: ${MODULE_HARVESTER_COST}💰</div>
-                            <div><button id="buyHarvesterModalBtn">Купить</button></div>
-                        </div>`;
-        modulesHtml += `<div class="shop-item">
-                            <div><b>Генератор Силы Странника</b><br>Даёт +5 СС за перелёт<br>Цена: ${MODULE_SS_GENERATOR_COST}💰</div>
-                            <div><button id="buySSGeneratorModalBtn">Купить</button></div>
-                        </div>`;
-        modal.innerHTML = `<div class="modal-content">
-            <h2>🛸 КОСМИЧЕСКИЙ МАГАЗИН</h2>
-            <h3>Корабли</h3>
-            <div id="modalShopList">${shipsHtml}</div>
-            <h3>Модули</h3>
-            <div id="modalModulesList">${modulesHtml}</div>
-            <div class="modal-buttons"><button id="closeShopModalBtn">Закрыть</button></div>
-        </div>`;
-        document.body.appendChild(modal);
-        
-        // Обработка покупки корабля
-        modal.querySelectorAll(".buyShipBtnModal").forEach(btn => {
-            btn.onclick = () => {
-                let level = parseInt(btn.getAttribute("data-level"));
-                let ship = SHIPS.find(s => s.level === level);
-                if (player.shipLevel < ship.level && ship.level <= player.level + 1 && player.credits >= ship.cost) {
-                    player.credits -= ship.cost;
-                    let oldShip = getShip(player.shipLevel);
-                    let fuelPercent = player.fuel / oldShip.fuelCap;
-                    player.shipLevel = ship.level;
-                    player.fuel = Math.min(ship.fuelCap, Math.floor(ship.fuelCap * fuelPercent));
-                    player.hasTMHarvester = false;
-                    player.hasSSGenerator = false;
-                    addLogToGame(`Вы купили корабль ${ship.name}!`, "success");
-                    updateUI();
-                    saveGame();
-                    modal.remove();
-                    openShipShopModal(); // обновить магазин
-                } else {
-                    alert("Недостаточно средств или не подходит уровень.");
-                }
-            };
-        });
-        // Модуль добычи ТМ
-        let buyHarvester = modal.querySelector("#buyHarvesterModalBtn");
-        if (buyHarvester) {
-            buyHarvester.onclick = () => {
-                if (!player.hasTMHarvester && player.credits >= MODULE_HARVESTER_COST) {
-                    player.credits -= MODULE_HARVESTER_COST;
-                    player.hasTMHarvester = true;
-                    addLogToGame("Вы купили модуль добычи ТМ!", "success");
-                    updateUI();
-                    saveGame();
-                    modal.remove();
-                    openShipShopModal();
-                } else {
-                    alert("Недостаточно кредитов или модуль уже установлен.");
-                }
-            };
-        }
-        // Генератор СС
-        let buySSGen = modal.querySelector("#buySSGeneratorModalBtn");
-        if (buySSGen) {
-            buySSGen.onclick = () => {
-                if (!player.hasSSGenerator && player.credits >= MODULE_SS_GENERATOR_COST) {
-                    player.credits -= MODULE_SS_GENERATOR_COST;
-                    player.hasSSGenerator = true;
-                    addLogToGame("Вы купили генератор Силы Странника!", "success");
-                    updateUI();
-                    saveGame();
-                    modal.remove();
-                    openShipShopModal();
-                } else {
-                    alert("Недостаточно кредитов или модуль уже установлен.");
-                }
-            };
-        }
-        modal.querySelector("#closeShopModalBtn").onclick = () => modal.remove();
+        let shopDiv = document.getElementById("shopPanel");
+        shopDiv.classList.remove("hidden");
+        renderShopTab("ships");
+        document.getElementById("tabShipsBtn").onclick = () => renderShopTab("ships");
+        document.getElementById("tabModulesBtn").onclick = () => renderShopTab("modules");
+        document.getElementById("closeShopBtn").onclick = () => shopDiv.classList.add("hidden");
     }
-
-    // --- Док с лентой и кнопкой главного меню ---
-    function updateDockLog() {
-        if (!currentDockModal) return;
-        let dockLogDiv = currentDockModal.querySelector(".dock-log");
-        if (dockLogDiv) {
-            let mainLog = document.getElementById("logBox");
-            if (mainLog) {
-                dockLogDiv.innerHTML = mainLog.innerHTML;
-                dockLogDiv.scrollTop = dockLogDiv.scrollHeight;
+    function renderShopTab(tab) {
+        const shipsDiv = document.getElementById("shopShipsList");
+        const modulesDiv = document.getElementById("shopModulesList");
+        if (tab === "ships") {
+            shipsDiv.classList.remove("hidden");
+            modulesDiv.classList.add("hidden");
+            document.getElementById("tabShipsBtn").classList.add("active");
+            document.getElementById("tabModulesBtn").classList.remove("active");
+            let html = '';
+            for (let ship of SHIPS) {
+                let available = (ship.level > player.shipLevel && ship.level <= player.level + 1 && player.credits >= ship.cost);
+                let owned = (ship.level === player.shipLevel);
+                html += `<div class="shop-item"><div><b>${ship.name}</b> (ур.${ship.level})<br>Сила:${ship.power} | Груз:${ship.cargo} | Бак:${ship.fuelCap}<br>Цена: ${Math.floor(ship.cost)}💰</div><div>${owned ? '<button disabled style="background:#1f5a3a;">✓ В собственности</button>' : (available ? `<button class="buyShipBtnModal" data-level="${ship.level}">Купить за ${Math.floor(ship.cost)}💰</button>` : '<button disabled>🔒 Требуется уровень и кредиты</button>')}</div></div>`;
             }
-        }
-    }
-
-    function openDock() {
-        if (player.strangePower < DOCK_COST) {
-            addLogToGame(`Недостаточно Силы Странника для входа в док (нужно ${DOCK_COST})`, "warning");
-            return;
-        }
-        player.strangePower -= DOCK_COST;
-        saveGame();
-        let modal = document.createElement("div");
-        modal.className = "modal";
-        modal.innerHTML = `<div class="modal-content" style="max-width: 900px;">
-            <h2>🚀 КОСМИЧЕСКИЙ ДОК</h2>
-            <div class="dock-panel">
-                <div class="dock-section">
-                    <button id="dockShopBtn">🛸 МАГАЗИН</button>
-                    <button id="dockCollectIncomeBtn">💰 СОБРАТЬ ПРИБЫЛЬ</button>
-                    <button id="dockCollectTMBtn">🌑 СОБРАТЬ ТМ</button>
-                    <button id="dockTeleportBtn">🌀 ТЕЛЕПОРТ</button>
-                    <button id="dockMyPlanetsBtn">📡 МОИ ПЛАНЕТЫ</button>
-                    <button id="dockStatsBtn">📊 ПАРАМЕТРЫ</button>
-                    <button id="dockMissionBtn">📜 ЗАДАНИЕ</button>
-                    <button id="dockMenuBtn">🏠 ГЛАВНОЕ МЕНЮ</button>
-                </div>
-                <div id="dockContent" class="dock-section" style="min-height: 200px;">
-                    <p>Выберите действие.</p>
-                </div>
-                <div class="dock-log" style="background:#02070f; border-radius:24px; height:150px; overflow-y:auto; padding:10px; font-size:12px; border:1px solid #1f4868; margin-top:10px;">
-                    <!-- сюда будет копия ленты -->
-                </div>
-                <div class="modal-buttons"><button id="closeDockBtn">ПОКИНУТЬ ДОК</button></div>
-            </div>
-        </div>`;
-        document.body.appendChild(modal);
-        currentDockModal = modal;
-        
-        function updateDockContentWithLog() {
-            let mainLog = document.getElementById("logBox");
-            if (mainLog && modal.querySelector(".dock-log")) {
-                modal.querySelector(".dock-log").innerHTML = mainLog.innerHTML;
-                modal.querySelector(".dock-log").scrollTop = modal.querySelector(".dock-log").scrollHeight;
-            }
-        }
-        updateDockContentWithLog();
-        
-        function showMyPlanets() {
-            let owned = [];
-            for (let i=0; i<PLANET_COUNT; i++) {
-                if (planetOwners[i] === "player") owned.push(i);
-            }
-            if (owned.length === 0) {
-                document.getElementById("dockContent").innerHTML = "<p>У вас нет планет.</p>";
-                return;
-            }
-            let html = "<h3>Ваши планеты</h3>";
-            for (let idx of owned) {
-                let planetNum = idx+1;
-                let income = planetIncome[idx];
-                let tm = planetTM[idx];
-                let modules = planetModules[idx];
-                html += `<div class="planet-list-item">
-                    <div><b>#${planetNum}</b> | 💰${income} | 🌑${tm}<br>
-                    ${modules.teleport ? "🌀Телепорт " : ""}${modules.tmGenerator ? "⚡Генератор ТМ" : ""}</div>
-                    <div class="inline-buttons">
-                        <button class="collectIncomeOne" data-idx="${idx}">Собрать💰</button>
-                        <button class="installTeleport" data-idx="${idx}">Телепорт (10000💰)</button>
-                        <button class="installTMGen" data-idx="${idx}">Генератор ТМ (10000💰)</button>
-                    </div>
-                </div>`;
-            }
-            document.getElementById("dockContent").innerHTML = html;
-            document.querySelectorAll(".collectIncomeOne").forEach(btn => {
-                btn.onclick = () => { collectPlanetIncome(parseInt(btn.dataset.idx), true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); };
-            });
-            document.querySelectorAll(".installTeleport").forEach(btn => {
-                btn.onclick = () => { installPlanetModule(parseInt(btn.dataset.idx), "teleport", true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); };
-            });
-            document.querySelectorAll(".installTMGen").forEach(btn => {
-                btn.onclick = () => { installPlanetModule(parseInt(btn.dataset.idx), "tmGenerator", true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); };
-            });
-        }
-        
-        function showTeleport() {
-            let teleports = [];
-            for (let i=0; i<PLANET_COUNT; i++) {
-                if (planetOwners[i] === "player" && planetModules[i].teleport) teleports.push(i);
-            }
-            if (teleports.length === 0) {
-                document.getElementById("dockContent").innerHTML = "<p>Нет планет с телепортом.</p>";
-                return;
-            }
-            let html = "<h3>Телепортация</h3>";
-            for (let idx of teleports) {
-                html += `<button class="teleportBtn" data-idx="${idx}">Телепорт на планету #${idx+1}</button> `;
-            }
-            document.getElementById("dockContent").innerHTML = html;
-            document.querySelectorAll(".teleportBtn").forEach(btn => {
+            shipsDiv.innerHTML = html;
+            shipsDiv.querySelectorAll(".buyShipBtnModal").forEach(btn => {
                 btn.onclick = () => {
-                    let target = parseInt(btn.dataset.idx);
-                    player.currentPlanet = target+1;
-                    addLogToGame(`Телепортация на планету #${target+1}`, "success");
-                    saveGame();
-                    modal.remove();
-                    currentDockModal = null;
-                    updateUI();
+                    let level = parseInt(btn.dataset.level);
+                    let ship = SHIPS.find(s => s.level === level);
+                    if (player.shipLevel < ship.level && ship.level <= player.level + 1 && player.credits >= ship.cost) {
+                        player.credits -= ship.cost;
+                        let oldShip = getShip(player.shipLevel);
+                        let fuelPercent = player.fuel / oldShip.fuelCap;
+                        player.shipLevel = ship.level;
+                        player.fuel = Math.min(ship.fuelCap, Math.floor(ship.fuelCap * fuelPercent));
+                        player.hasTMHarvester = false; player.hasSSGenerator = false;
+                        addLogToGame(`Вы купили корабль ${ship.name}!`, "success");
+                        updateUI(); saveGame(); renderShopTab("ships");
+                    } else alert("Недостаточно средств или не подходит уровень.");
                 };
             });
+        } else {
+            shipsDiv.classList.add("hidden");
+            modulesDiv.classList.remove("hidden");
+            document.getElementById("tabShipsBtn").classList.remove("active");
+            document.getElementById("tabModulesBtn").classList.add("active");
+            let modulesHtml = `<div class="shop-item"><div><b>Модуль добычи ТМ</b><br>+1 ТМ за перелёт<br>Цена: ${MODULE_HARVESTER_COST}💰</div><div><button id="buyHarvesterModalBtn" ${player.hasTMHarvester ? "disabled" : ""}>${player.hasTMHarvester ? "✓ Установлен" : "Купить"}</button></div></div>
+                              <div class="shop-item"><div><b>Генератор Силы Странника</b><br>+5 СС за перелёт<br>Цена: ${MODULE_SS_GENERATOR_COST}💰</div><div><button id="buySSGeneratorModalBtn" ${player.hasSSGenerator ? "disabled" : ""}>${player.hasSSGenerator ? "✓ Установлен" : "Купить"}</button></div></div>`;
+            modulesDiv.innerHTML = modulesHtml;
+            let buyHarvester = document.getElementById("buyHarvesterModalBtn");
+            if (buyHarvester) buyHarvester.onclick = () => { if (!player.hasTMHarvester && player.credits >= MODULE_HARVESTER_COST) { player.credits -= MODULE_HARVESTER_COST; player.hasTMHarvester = true; addLogToGame("Вы купили модуль добычи ТМ!", "success"); updateUI(); saveGame(); renderShopTab("modules"); } else alert("Недостаточно кредитов."); };
+            let buySSGen = document.getElementById("buySSGeneratorModalBtn");
+            if (buySSGen) buySSGen.onclick = () => { if (!player.hasSSGenerator && player.credits >= MODULE_SS_GENERATOR_COST) { player.credits -= MODULE_SS_GENERATOR_COST; player.hasSSGenerator = true; addLogToGame("Вы купили генератор Силы Странника!", "success"); updateUI(); saveGame(); renderShopTab("modules"); } else alert("Недостаточно кредитов."); };
         }
-        
+    }
+
+    // Док (без изменений, кроме того что телепорт там уже работает)
+    function updateDockLog() { if (!currentDockModal) return; let dockLogDiv = currentDockModal.querySelector(".dock-log"); if (dockLogDiv) { let mainLog = document.getElementById("logBox"); if (mainLog) { dockLogDiv.innerHTML = mainLog.innerHTML; dockLogDiv.scrollTop = dockLogDiv.scrollHeight; } } }
+    function reopenDock() { isRestoringDock = true; openDock(true); isRestoringDock = false; }
+    function openDock(restore = false) {
+        if (!restore && player.strangePower < DOCK_COST) { addLogToGame(`Недостаточно Силы Странника для входа в док (нужно ${DOCK_COST})`, "warning"); return; }
+        if (!restore) { player.strangePower -= DOCK_COST; saveGame(); }
+        player.inDock = true;
+        let modal = document.createElement("div");
+        modal.className = "modal";
+        modal.innerHTML = `<div class="modal-content" style="max-width: 900px;"><h2>🚀 КОСМИЧЕСКИЙ ДОК</h2><div class="dock-panel"><div class="dock-section"><button id="dockShopBtn">🛸 МАГАЗИН</button><button id="dockCollectIncomeBtn">💰 СОБРАТЬ ПРИБЫЛЬ</button><button id="dockCollectTMBtn">🌑 СОБРАТЬ ТМ</button><button id="dockTeleportBtn">🌀 ТЕЛЕПОРТ</button><button id="dockMyPlanetsBtn">📡 МОИ ПЛАНЕТЫ</button><button id="dockStatsBtn">📊 ПАРАМЕТРЫ</button><button id="dockMissionBtn">📜 ЗАДАНИЕ</button><button id="dockMenuBtn">🏠 ГЛАВНОЕ МЕНЮ</button></div><div id="dockContent" class="dock-section" style="min-height: 200px;"><p>Выберите действие.</p></div><div class="dock-log"></div><div class="modal-buttons"><button id="closeDockBtn">ПОКИНУТЬ ДОК</button></div></div></div>`;
+        document.body.appendChild(modal);
+        currentDockModal = modal;
+        function updateDockContentWithLog() { let mainLog = document.getElementById("logBox"); if (mainLog && modal.querySelector(".dock-log")) { modal.querySelector(".dock-log").innerHTML = mainLog.innerHTML; modal.querySelector(".dock-log").scrollTop = modal.querySelector(".dock-log").scrollHeight; } }
+        updateDockContentWithLog();
+        function showMyPlanets() {
+            let owned = []; for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === "player") owned.push(i);
+            if (owned.length === 0) { document.getElementById("dockContent").innerHTML = "<p>У вас нет планет.</p>"; return; }
+            let html = "<h3>Ваши планеты</h3>";
+            for (let idx of owned) { let modules = planetModules[idx]; html += `<div class="planet-list-item"><div><b>#${idx+1}</b> | 💰${planetIncome[idx]} | 🌑${planetTM[idx]}<br>${modules.teleport ? "🌀Телепорт " : ""}${modules.tmGenerator ? "⚡Генератор ТМ" : ""}</div><div class="inline-buttons"><button class="collectIncomeOne" data-idx="${idx}">Собрать💰</button><button class="installTeleport" data-idx="${idx}" ${modules.teleport ? "disabled" : ""}>Телепорт (10000💰)${modules.teleport ? " (установлен)" : ""}</button><button class="installTMGen" data-idx="${idx}" ${modules.tmGenerator ? "disabled" : ""}>Генератор ТМ (10000💰)${modules.tmGenerator ? " (установлен)" : ""}</button></div></div>`; }
+            document.getElementById("dockContent").innerHTML = html;
+            document.querySelectorAll(".collectIncomeOne").forEach(btn => { btn.onclick = () => { collectPlanetIncome(parseInt(btn.dataset.idx), true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); }; });
+            document.querySelectorAll(".installTeleport").forEach(btn => { if (!btn.disabled) btn.onclick = () => { installPlanetModule(parseInt(btn.dataset.idx), "teleport", true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); }; });
+            document.querySelectorAll(".installTMGen").forEach(btn => { if (!btn.disabled) btn.onclick = () => { installPlanetModule(parseInt(btn.dataset.idx), "tmGenerator", true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); }; });
+        }
+        function showTeleport() {
+            let teleports = []; for (let i=0; i<PLANET_COUNT; i++) if (planetOwners[i] === "player" && planetModules[i].teleport) teleports.push(i);
+            if (teleports.length === 0) { document.getElementById("dockContent").innerHTML = "<p>Нет планет с телепортом.</p>"; return; }
+            let html = "<h3>Телепортация</h3>";
+            for (let idx of teleports) html += `<button class="teleportBtn" data-idx="${idx}">Телепорт на планету #${idx+1}</button> `;
+            document.getElementById("dockContent").innerHTML = html;
+            document.querySelectorAll(".teleportBtn").forEach(btn => { btn.onclick = () => { let target = parseInt(btn.dataset.idx); player.currentPlanet = target+1; addLogToGame(`Телепортация на планету #${target+1}`, "success"); saveGame(); modal.remove(); currentDockModal = null; player.inDock = false; updateUI(); }; });
+        }
         document.getElementById("dockShopBtn").onclick = () => { openShipShopModal(); updateDockContentWithLog(); };
         document.getElementById("dockCollectIncomeBtn").onclick = () => { collectAllIncome(true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); };
         document.getElementById("dockCollectTMBtn").onclick = () => { collectTMFromPlanets(true, player); saveGame(); showMyPlanets(); updateDockContentWithLog(); };
         document.getElementById("dockTeleportBtn").onclick = () => showTeleport();
         document.getElementById("dockMyPlanetsBtn").onclick = () => showMyPlanets();
-        document.getElementById("dockStatsBtn").onclick = () => {
-            let ship = getShip(player.shipLevel);
-            document.getElementById("dockContent").innerHTML = `<p>🛸 Корабль: ${ship.name}<br>Сила: ${getTotalPower(player).toFixed(2)}<br>Прочность: ${player.hull}%<br>Уровень: ${player.level}<br>Победы: ${player.wins}<br>Трюм: ${Object.values(player.cargo).reduce((a,b)=>a+b,0)}/${ship.cargo}<br>Модули: ${player.hasTMHarvester ? "🌑 Добыча ТМ " : ""}${player.hasSSGenerator ? "🌀 Генератор СС" : ""}</p>`;
-        };
-        document.getElementById("dockMissionBtn").onclick = () => {
-            let text = "Нет задания";
-            if (currentMission && !currentMission.completed) text = `Купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet} → #${currentMission.toPlanet} Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑"}`;
-            else if (currentMission && currentMission.completed) text = "✅ Задание выполнено";
-            document.getElementById("dockContent").innerHTML = `<p>${text}</p>`;
-        };
-        document.getElementById("dockMenuBtn").onclick = () => {
-            modal.remove();
-            currentDockModal = null;
-            gameActive = false;
-            if (botInterval) clearInterval(botInterval);
-            if (botCreationTimeout) clearTimeout(botCreationTimeout);
-            document.getElementById("menuScreen").style.display = "block";
-            document.getElementById("gameScreen").classList.add("hidden");
-            updateRanking();
-            document.getElementById("continueBtn").disabled = player.isDead;
-            document.getElementById("newGameBtn").disabled = !player.isDead;
-            saveGame();
-        };
-        document.getElementById("closeDockBtn").onclick = () => { modal.remove(); currentDockModal = null; };
+        document.getElementById("dockStatsBtn").onclick = () => { let ship = getShip(player.shipLevel); document.getElementById("dockContent").innerHTML = `<p>🛸 Корабль: ${ship.name}<br>Сила: ${getTotalPower(player).toFixed(2)}<br>Прочность: ${player.hull}%<br>Уровень: ${player.level}<br>Победы: ${player.wins}<br>Трюм: ${Object.values(player.cargo).reduce((a,b)=>a+b,0)}/${ship.cargo}<br>Модули: ${player.hasTMHarvester ? "🌑 Добыча ТМ " : ""}${player.hasSSGenerator ? "🌀 Генератор СС" : ""}</p>`; };
+        document.getElementById("dockMissionBtn").onclick = () => { let text = "Нет задания"; if (currentMission && !currentMission.completed) text = `Купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet} → #${currentMission.toPlanet} Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑"}`; else if (currentMission && currentMission.completed) text = "✅ Задание выполнено"; document.getElementById("dockContent").innerHTML = `<p>${text}</p>`; };
+        document.getElementById("dockMenuBtn").onclick = () => { modal.remove(); currentDockModal = null; player.inDock = false; gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRanking(); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
+        document.getElementById("closeDockBtn").onclick = () => { modal.remove(); currentDockModal = null; player.inDock = false; saveGame(); };
         showMyPlanets();
     }
 
-    // --- Рейтинг ---
+    // Рейтинг
     function updateRanking() {
-        let all = [
-            { name: "⭐ ВЫ", level: player.level, power: getTotalPower(player), wins: player.wins },
-            ...bots.map(b => ({ name: b.name, level: b.level, power: getTotalPower(b), wins: b.wins }))
-        ];
+        let all = [{ name: "⭐ ВЫ", level: player.level, power: getTotalPower(player), wins: player.wins }, ...bots.map(b => ({ name: b.name, level: b.level, power: getTotalPower(b), wins: b.wins }))];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
         let html = `表<table><thead><tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
-        all.forEach(p => {
-            html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`;
-        });
+        all.forEach(p => html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
         html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
     }
 
-    // --- Экспорт/Импорт ---
-    function exportSave() {
-        let saveData = localStorage.getItem("starNomadFull");
-        if (!saveData) { alert("Нет сохранения."); return; }
-        let blob = new Blob([saveData], {type: "application/json"});
-        let url = URL.createObjectURL(blob);
-        let a = document.createElement("a");
-        a.href = url;
-        a.download = "star_nomad_save.json";
-        a.click();
-        URL.revokeObjectURL(url);
-        alert("Сохранение экспортировано.");
-    }
-    function importSave() {
-        let input = document.createElement("input");
-        input.type = "file";
-        input.accept = "application/json";
-        input.onchange = (e) => {
-            let file = e.target.files[0];
-            if (!file) return;
-            let reader = new FileReader();
-            reader.onload = (ev) => {
-                try {
-                    let data = JSON.parse(ev.target.result);
-                    localStorage.setItem("starNomadFull", JSON.stringify(data));
-                    alert("Сохранение импортировано. Перезагрузите страницу.");
-                    location.reload();
-                } catch (err) { alert("Ошибка импорта."); }
-            };
-            reader.readAsText(file);
-        };
-        input.click();
-    }
+    // Экспорт/Импорт
+    function exportSave() { let saveData = localStorage.getItem("starNomadFull"); if (!saveData) { alert("Нет сохранения."); return; } let blob = new Blob([saveData], {type: "application/json"}); let url = URL.createObjectURL(blob); let a = document.createElement("a"); a.href = url; a.download = "star_nomad_save.json"; a.click(); URL.revokeObjectURL(url); alert("Сохранение экспортировано."); }
+    function importSave() { let input = document.createElement("input"); input.type = "file"; input.accept = "application/json"; input.onchange = (e) => { let file = e.target.files[0]; if (!file) return; let reader = new FileReader(); reader.onload = (ev) => { try { let data = JSON.parse(ev.target.result); localStorage.setItem("starNomadFull", JSON.stringify(data)); alert("Сохранение импортировано. Перезагрузите страницу."); location.reload(); } catch (err) { alert("Ошибка импорта."); } }; reader.readAsText(file); }; input.click(); }
 
-    // --- Обновление интерфейса ---
+    // UI
     function updateUI() {
         let ship = getShip(player.shipLevel);
         document.getElementById("shipName").innerText = ship.name;
@@ -1602,18 +1158,11 @@
         document.getElementById("levelVal").innerText = player.level;
         document.getElementById("winsVal").innerText = player.wins;
         document.getElementById("currentPlanetName").innerHTML = `Планета #${player.currentPlanet}`;
-        let cargoHtml = '';
-        for (let g of GOODS) {
-            let qty = player.cargo[g.id] || 0;
-            cargoHtml += `<div class="cargo-item">${g.name}: ${qty}</div>`;
-        }
+        let cargoHtml = ''; for (let g of GOODS) { let qty = player.cargo[g.id] || 0; cargoHtml += `<div class="cargo-item">${g.name}: ${qty}</div>`; }
         document.getElementById("cargoDisplay").innerHTML = cargoHtml || '<div class="cargo-item">Пусто</div>';
         let missionText = "Нет активного задания";
-        if (currentMission && !currentMission.completed) {
-            missionText = `📡 ЗАДАНИЕ: Купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet} → #${currentMission.toPlanet}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
-        } else if (currentMission && currentMission.completed) {
-            missionText = "✅ Задание выполнено.";
-        }
+        if (currentMission && !currentMission.completed) missionText = `📡 ЗАДАНИЕ: Купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet} → #${currentMission.toPlanet}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
+        else if (currentMission && currentMission.completed) missionText = "✅ Задание выполнено.";
         document.getElementById("missionText").innerText = missionText;
         if (currentDockModal) updateDockLog();
     }
@@ -1644,13 +1193,8 @@
         scheduleBotCreation();
         setInterval(() => { if (gameActive) refreshPricesOnly(); }, 60000);
         setInterval(() => { if (gameActive) updateMissionByTimer(); }, 60000);
-        setInterval(() => {
-            if (gameActive && player.immunityUntil && Date.now() > player.immunityUntil && player.immunityUntil !== 0) {
-                addLogToGame("🛡️ Иммунитет закончился! Боты могут атаковать.", "warning");
-                player.immunityUntil = 0;
-                saveGame();
-            }
-        }, 60000);
+        setInterval(() => { if (gameActive && player.immunityUntil && Date.now() > player.immunityUntil && player.immunityUntil !== 0) { addLogToGame("🛡️ Иммунитет закончился! Боты могут атаковать.", "warning"); player.immunityUntil = 0; saveGame(); } }, 60000);
+        if (player.inDock) reopenDock();
     }
 
     // --- Инициализация ---
@@ -1659,37 +1203,15 @@
         let lastSaveTime = localStorage.getItem("starNomadFullLastTime");
         if (lastSaveTime) {
             let timePassed = Date.now() - parseInt(lastSaveTime);
-            if (timePassed > 0 && timePassed < 12*60*60*1000) {
-                let minutesPassed = timePassed / 60000;
-                updatePlanetTMGeneration(minutesPassed);
-                saveGame();
-            }
+            if (timePassed > 0 && timePassed < 12*60*60*1000) { let minutesPassed = timePassed / 60000; updatePlanetTMGeneration(minutesPassed); saveGame(); }
         }
         localStorage.setItem("starNomadFullLastTime", Date.now().toString());
         document.getElementById("continueBtn").disabled = player.isDead;
         document.getElementById("newGameBtn").disabled = !player.isDead;
         document.getElementById("continueBtn").onclick = () => startGame();
-        document.getElementById("newGameBtn").onclick = () => {
-            if (!player.isDead) { alert("Новая игра только после гибели."); return; }
-            createNewPlayerInCurrentWorld();
-            player.isDead = false;
-            document.getElementById("continueBtn").disabled = false;
-            document.getElementById("newGameBtn").disabled = true;
-            updateRanking();
-            if (gameActive) {
-                gameActive = false;
-                if (botInterval) clearInterval(botInterval);
-                if (botCreationTimeout) clearTimeout(botCreationTimeout);
-                document.getElementById("menuScreen").style.display = "block";
-                document.getElementById("gameScreen").classList.add("hidden");
-            }
-        };
+        document.getElementById("newGameBtn").onclick = () => { if (!player.isDead) { alert("Новая игра только после гибели."); return; } createNewPlayerInCurrentWorld(); player.isDead = false; document.getElementById("continueBtn").disabled = false; document.getElementById("newGameBtn").disabled = true; updateRanking(); if (gameActive) { gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); } };
         document.getElementById("shopBtn").onclick = () => openShipShopModal();
-        document.getElementById("rankingBtn").onclick = () => {
-            let panel = document.getElementById("rankingPanel");
-            panel.classList.toggle("hidden");
-            updateRanking();
-        };
+        document.getElementById("rankingBtn").onclick = () => { document.getElementById("rankingPanel").classList.toggle("hidden"); updateRanking(); };
         document.getElementById("exportBtn").onclick = () => exportSave();
         document.getElementById("importBtn").onclick = () => importSave();
         document.getElementById("exitBtn").onclick = () => { saveGame(); alert("Игра сохранена."); };
@@ -1697,28 +1219,12 @@
         document.getElementById("rightBtn").onclick = () => move(1);
         document.getElementById("hyperLeftBtn").onclick = () => hyperJump(-1);
         document.getElementById("hyperRightBtn").onclick = () => hyperJump(1);
-        document.getElementById("menuBtn").onclick = () => {
-            gameActive = false;
-            if (botInterval) clearInterval(botInterval);
-            if (botCreationTimeout) clearTimeout(botCreationTimeout);
-            document.getElementById("menuScreen").style.display = "block";
-            document.getElementById("gameScreen").classList.add("hidden");
-            updateRanking();
-            document.getElementById("continueBtn").disabled = player.isDead;
-            document.getElementById("newGameBtn").disabled = !player.isDead;
-            saveGame();
-        };
-        document.getElementById("dockBtn").onclick = () => openDock();
-        document.getElementById("currentPlanetCard").onclick = () => {
-            if (player.isDead) { addLogToGame("Ваш корабль уничтожен.", "warning"); return; }
-            openPlanetMenu(player.currentPlanet);
-        };
+        document.getElementById("menuBtn").onclick = () => { gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRanking(); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
+        document.getElementById("dockBtn").onclick = () => openDock(false);
+        document.getElementById("currentPlanetCard").onclick = () => { if (!player.isDead) openPlanetMenu(player.currentPlanet); };
         document.getElementById("menuScreen").style.display = "block";
         updateRanking();
-        setInterval(() => {
-            let rankingPanel = document.getElementById("rankingPanel");
-            if (rankingPanel && !rankingPanel.classList.contains("hidden")) updateRanking();
-        }, 10000);
+        setInterval(() => { let rp = document.getElementById("rankingPanel"); if (rp && !rp.classList.contains("hidden")) updateRanking(); }, 10000);
         if (!currentMission && !missionCompleted) generateMission();
     };
 </script>
