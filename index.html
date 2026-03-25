@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Star Nomad — Звёздные войны</title>
     <!-- PWA метатеги -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -14,6 +14,7 @@
         * {
             box-sizing: border-box;
             user-select: none;
+            touch-action: manipulation; /* предотвращает масштабирование при двойном тапе */
         }
         body {
             background: #03050b;
@@ -21,6 +22,7 @@
             margin: 0;
             padding: 20px;
             color: white;
+            touch-action: manipulation;
         }
         .game-container {
             max-width: 1100px;
@@ -44,6 +46,7 @@
             transition: 0.1s;
             border: 1px solid #2e6f97;
             margin: 4px;
+            touch-action: manipulation;
         }
         button:hover:not(:disabled) {
             background: #1d3f5a;
@@ -101,6 +104,7 @@
             cursor: pointer;
             transition: 0.1s;
             margin-bottom: 20px;
+            touch-action: manipulation;
         }
         .planet-card:hover {
             background: #0f2638;
@@ -142,6 +146,7 @@
         .log-entry.success { border-left-color: #6fcf97; }
         .log-entry.warning { border-left-color: #f2c94c; }
         .log-entry.mission { border-left-color: #f0a3ff; color: #f0d4ff; }
+        .log-entry.goods { border-left-color: #7fcdff; color: #b8e2ff; }
         .modal {
             position: fixed;
             top: 0; left: 0;
@@ -386,6 +391,9 @@
     const DOCK_COST = 100;
     const DARK_MATTER_CHANCE = 0.1;
     const DARK_MATTER_AMOUNT = [2,5];
+    const GOODS_FIND_CHANCE = 0.2;        // 20% шанс найти товар при перелёте
+    const GOODS_FIND_AMOUNT = [5,10];      // от 5 до 10 единиц
+    const GOODS_FIND_TYPES = ["gold", "food"]; // золото или продукты
     const BOT_MOVE_DELAY_MIN = 1000;
     const BOT_MOVE_DELAY_MAX = 3000;
     const BOT_CREATE_INTERVAL_MS = 10 * 60 * 1000;
@@ -643,10 +651,29 @@
     function getTotalPower(entity) {
         let ship = getShip(entity.shipLevel);
         let rocketBonus = (entity.cargo.rockets || 0) * 0.5;
-        let tmBonus = (entity.darkMatter || 0) / 100;
+        let tmBonus = (entity.darkMatter || 0) / 100;   // 1 ТМ = 0.01 силы
         let effective = ship.power + rocketBonus + tmBonus;
         let hullPercent = Math.max(0, entity.hull) / 100;
         return effective * hullPercent;
+    }
+
+    // --- Функция нахождения товаров при перелёте ---
+    function tryFindGoods(entity, isPlayer) {
+        if (Math.random() > GOODS_FIND_CHANCE) return false;
+        // Случайный товар из разрешённых
+        const goodType = GOODS_FIND_TYPES[Math.floor(Math.random() * GOODS_FIND_TYPES.length)];
+        const good = GOODS.find(g => g.id === goodType);
+        if (!good) return false;
+        const amount = Math.floor(Math.random() * (GOODS_FIND_AMOUNT[1] - GOODS_FIND_AMOUNT[0] + 1) + GOODS_FIND_AMOUNT[0]);
+        // Проверяем место в трюме
+        const ship = getShip(entity.shipLevel);
+        const currentCargo = Object.values(entity.cargo).reduce((a,b)=>a+b,0);
+        const freeSpace = ship.cargo - currentCargo;
+        if (freeSpace < amount * good.cargoSpace) return false;
+        // Добавляем товар
+        entity.cargo[good.id] = (entity.cargo[good.id] || 0) + amount;
+        addLogToGame(`${isPlayer ? "Вы" : entity.name} нашли ${amount} ${good.name} в космосе!`, "goods");
+        return true;
     }
 
     // --- Функции владения планетами ---
@@ -780,7 +807,7 @@
         if (Math.abs(player.level - bot.level) > 1) { addLogToGame(`Вы встретили ${bot.name} (ур.${bot.level}), но разница уровней слишком велика для боя.`, "warning"); return; }
         let modal = document.createElement("div");
         modal.className = "modal";
-        modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${getTotalPower(bot).toFixed(4)}</p><p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>Ваша сила: ${getTotalPower(player).toFixed(4)}</p><div class="modal-buttons"><button id="attackBtn">⚔️ АТАКОВАТЬ</button><button id="retreatBtn">🏃 ОТСТУПИТЬ</button></div></div>`;
+        modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${getTotalPower(bot).toFixed(2)}</p><p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>Ваша сила: ${getTotalPower(player).toFixed(2)}</p><div class="modal-buttons"><button id="attackBtn">⚔️ АТАКОВАТЬ</button><button id="retreatBtn">🏃 ОТСТУПИТЬ</button></div></div>`;
         document.body.appendChild(modal);
         modal.querySelector("#attackBtn").onclick = () => { modal.remove(); fightWithBot(bot); };
         modal.querySelector("#retreatBtn").onclick = () => { modal.remove(); addLogToGame(`Вы отступили от ${bot.name}.`, "warning"); };
@@ -799,6 +826,8 @@
         if (player.hasSSGenerator) { player.strangePower += 2; addLogToGame(`Генератор СС: +2 СС`, "success"); }
         if (player.hasTMHarvester) { player.darkMatter++; addLogToGame(`Модуль добычи: +1 ТМ`, "success"); }
         if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); player.darkMatter += tm; addLogToGame(`Найдена тёмная материя! +${tm} ТМ`, "success"); }
+        // Находка товаров
+        tryFindGoods(player, true);
         updateUI();
         encounterWithBots();
         saveGame();
@@ -1170,6 +1199,8 @@
                 if (bot.hasSSGenerator) bot.strangePower += 2;
                 if (Math.random() < DARK_MATTER_CHANCE) { let tm = Math.floor(Math.random()*(DARK_MATTER_AMOUNT[1]-DARK_MATTER_AMOUNT[0]+1)+DARK_MATTER_AMOUNT[0]); bot.darkMatter += tm; }
                 if (bot.hasTMHarvester) bot.darkMatter++;
+                // Находка товаров для бота
+                tryFindGoods(bot, false);
                 botTradeAndUpgrade(bot);
                 botTryCompleteMission(bot);
                 let planetIdx = bot.currentPlanet-1;
@@ -1325,7 +1356,7 @@
     function updateRanking() {
         let all = [{ name: "⭐ ВЫ", level: player.level, power: getTotalPower(player), wins: player.wins }, ...bots.map(b => ({ name: b.name, level: b.level, power: getTotalPower(b), wins: b.wins }))];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表<table border="0" cellpadding="5"><thead><tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr></thead><tbody>`;
+        let html = `表<table border="0" cellpadding="5"><thead> <tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr> </thead><tbody>`;
         all.forEach(p => html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
         html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
@@ -1335,7 +1366,6 @@
     function exportSave() {
         let saveData = localStorage.getItem("starNomadFull");
         if (!saveData) { alert("Нет сохранения для экспорта."); return; }
-        // Создаём файл и предлагаем сохранить
         const blob = new Blob([saveData], {type: "application/json"});
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -1373,7 +1403,7 @@
     function updateUI() {
         let ship = getShip(player.shipLevel);
         document.getElementById("shipName").innerText = ship.name;
-        document.getElementById("powerVal").innerText = getTotalPower(player).toFixed(4);
+        document.getElementById("powerVal").innerText = getTotalPower(player).toFixed(2);
         document.getElementById("hullVal").innerText = Math.floor(player.hull);
         document.getElementById("creditsVal").innerText = Math.floor(player.credits);
         document.getElementById("fuelVal").innerText = player.fuel;
@@ -1402,6 +1432,7 @@
         if (type==="success") entry.classList.add("success");
         if (type==="warning") entry.classList.add("warning");
         if (type==="mission") entry.classList.add("mission");
+        if (type==="goods") entry.classList.add("goods");
         entry.innerText = msg;
         logDiv.appendChild(entry);
         entry.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1448,6 +1479,7 @@
                     bot.darkMatter += tm;
                 }
                 if (bot.hasTMHarvester) bot.darkMatter++;
+                tryFindGoods(bot, false);
                 botTradeAndUpgrade(bot);
                 botTryCompleteMission(bot);
                 let planetIdx = bot.currentPlanet - 1;
@@ -1483,7 +1515,6 @@
 
     // --- PWA регистрация ---
     function registerPWA() {
-        // Манифест
         const manifest = {
             name: "Star Nomad — Торговая Империя",
             short_name: "Star Nomad",
@@ -1505,7 +1536,6 @@
         const manifestURL = URL.createObjectURL(manifestBlob);
         document.getElementById("manifest-link").setAttribute("href", manifestURL);
         
-        // Service Worker
         if ('serviceWorker' in navigator) {
             const swCode = `
                 const CACHE_NAME = 'star-nomad-v1';
@@ -1537,7 +1567,6 @@
             navigator.serviceWorker.register(swURL).catch(err => console.log("SW registration failed", err));
         }
 
-        // Показ баннера установки
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
