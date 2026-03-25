@@ -149,7 +149,7 @@
     function getShip(level) { return SHIPS[Math.min(level-1, 20)]; }
 
     // Состояние планет
-    let planets = []; // массив объектов { owner: null/id, modules: { teleport: bool, tm: bool }, income: { total: 0, lastCollect: timestamp }, buyCount: 0 }
+    let planets = [];
     function initPlanets() {
         for (let i = 0; i < PLANET_COUNT; i++) {
             planets.push({ owner: null, modules: { teleport: false, tm: false }, income: { total: 0, lastCollect: Date.now() }, buyCount: 0 });
@@ -293,7 +293,6 @@
         let planet = getPlanet(planetIdx);
         let cost = 10000 + (planet.buyCount * 5000);
         if (buyer.credits < cost) return false;
-        // Проверка уровня: можно перекупать только если уровень покупателя не ниже уровня владельца на 2+ и не выше на 2+? Условие: свой уровень и +1
         if (planet.owner !== null) {
             let owner = findEntityById(planet.owner);
             if (!owner) return false;
@@ -302,7 +301,7 @@
         buyer.credits -= cost;
         planet.owner = (buyer === player ? "player" : buyer.id);
         planet.buyCount++;
-        planet.modules = { teleport: false, tm: false }; // сброс модулей при перекупе
+        planet.modules = { teleport: false, tm: false };
         planet.income.total = 0;
         addLogToGame(`${buyer === player ? "Вы" : buyer.name} купили планету #${planetIdx} за ${cost}💰!`, "success");
         saveGame();
@@ -340,7 +339,7 @@
         for (let i = 1; i <= PLANET_COUNT; i++) {
             let p = getPlanet(i);
             if (p.owner === (owner === player ? "player" : owner.id) && p.modules.tm) {
-                total += 10; // генерируем 10 ТМ за минуту, но для простоты считаем при сборе
+                total += 10;
             }
         }
         if (total > 0) {
@@ -483,7 +482,6 @@
         logDiv.appendChild(entry);
         entry.scrollIntoView({ behavior: "smooth", block: "nearest" });
         while(logDiv.children.length > 50) logDiv.removeChild(logDiv.firstChild);
-        // Также дублируем в ленту меню
         let menuLog = document.getElementById("menuLogBox");
         if (menuLog && !gameActive) {
             let menuEntry = document.createElement("div"); menuEntry.className = "log-entry";
@@ -631,7 +629,6 @@
                 if (currentCargo + qty * g.cargoSpace > cargoSpace) { addLogToGame("Недостаточно места в трюме.", "warning"); return; }
                 player.credits -= totalCost; player.cargo[g.id] += qty; stocks[g.id] -= qty;
                 addLogToGame(`Куплено ${qty} ${g.name} за ${totalCost}💰`, "success");
-                // Доход владельцу планеты (10% от суммы покупки)
                 let planet = getPlanet(planetNumber);
                 if (planet.owner) {
                     let owner = findEntityById(planet.owner);
@@ -948,7 +945,6 @@
     function playerDefeated() {
         addLogToGame(`💀 Ваш корабль разрушен! Игра окончена.`, "combat");
         player.isDead = true;
-        // Очищаем планеты игрока
         for (let i = 1; i <= PLANET_COUNT; i++) {
             let p = getPlanet(i);
             if (p.owner === "player") {
@@ -1160,27 +1156,18 @@
         document.getElementById("closeShopBtn").onclick = () => shopDiv.classList.add("hidden");
     }
 
-    // ------------------- РЕЙТИНГ -------------------
+    // ------------------- РЕЙТИНГ (ТАБЛИЦА НА РУССКОМ) -------------------
     function updateRanking() {
         let all = [
             { name: "⭐ ВЫ", level: player.level, power: getEffectivePower(player), wins: player.wins },
             ...bots.map(b => ({ name: b.name, level: b.level, power: getEffectivePower(b), wins: b.wins }))
         ];
         all.sort((a,b) => b.level - a.level || b.wins - a.wins);
-        let html = `表格
-            <thead>
-                <tr><th>Пилот</th><th>Уровень</th><th>Сила</th><th>Победы</th>\
-            </thead>
-            <tbody>`;
-        all.forEach(p => {
-            html += `运转
-                <td>${p.name}运转
-                <td>${p.level}运转
-                <td>${formatPower(p.power)}运转
-                <td>${p.wins}运转
-            平民`;
-        });
-        html += `</tbody>${'江湖'}<p>Всего ботов: ${bots.length}</p>`;
+        let html = '<table><thead><tr><th>Пилот</th><th>Уровень</th><th>Сила</th><th>Победы</th></tr></thead><tbody>';
+        for (let p of all) {
+            html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${formatPower(p.power)}</td><td>${p.wins}</td></tr>`;
+        }
+        html += `</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML = html;
     }
 
