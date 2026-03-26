@@ -228,6 +228,7 @@
     }
     function hasArtifact(artifactsArray, id){ return artifactsArray.some(a=>a.id===id); }
 
+    // Автоматическая активация только для маскировки и амулета превосходства
     function autoActivateArtifacts(entity, isPlayer){
         if(isPlayer){
             if(Math.abs(player.level - (entity===player?0:entity.level))>1 && hasArtifact(playerArtifacts,"amuletSupremacy")){
@@ -248,13 +249,6 @@
                     }
                 }
             }
-            if(player.battleBuffRemaining===0 && hasArtifact(playerArtifacts,"energyResonator")){
-                if(useArtifact(playerArtifacts,"energyResonator")){
-                    player.battleBuffRemaining = 3;
-                    addLogToGame(`✨ Энергетический резонатор автоматически активирован! Сила удвоена на 3 боя.`,"artifact",true);
-                    return true;
-                }
-            }
         } else {
             if(Math.abs(player.level - entity.level)>1 && hasArtifact(entity.artifacts,"amuletSupremacy")){
                 if(useArtifact(entity.artifacts,"amuletSupremacy")){
@@ -272,13 +266,6 @@
                         addLogToGame(`✨ ${entity.name} активировал Временную маскировку! Игрок не будет атакован 10 ходов.`,"artifact",false);
                         return true;
                     }
-                }
-            }
-            if(entity.battleBuffRemaining===0 && hasArtifact(entity.artifacts,"energyResonator")){
-                if(useArtifact(entity.artifacts,"energyResonator")){
-                    entity.battleBuffRemaining = 3;
-                    addLogToGame(`✨ ${entity.name} активировал Энергетический резонатор! Сила удвоена на 3 боя.`,"artifact",false);
-                    return true;
                 }
             }
         }
@@ -303,6 +290,17 @@
             useArtifact(playerArtifacts, "rareCrystal");
             player.credits += 10000;
             addLogToGame(`✨ Вы обменяли редкий кристалл на 10000💰!`,"success",true);
+            updateUI();
+            saveGame();
+            return true;
+        } else if(artifactId === "energyResonator"){
+            if(player.battleBuffRemaining > 0){
+                addLogToGame("Энергетический резонатор уже активен!","warning",true);
+                return false;
+            }
+            useArtifact(playerArtifacts, "energyResonator");
+            player.battleBuffRemaining = 3;
+            addLogToGame(`✨ Активирован Энергетический резонатор! Сила удвоена на 3 боя.`,"artifact",true);
             updateUI();
             saveGame();
             return true;
@@ -346,6 +344,7 @@
     let currentContrabandMission = null;
     let lastContrabandUpdate = Date.now();
 
+    // Инициализация планет (как в предыдущей версии, без изменений)
     function initPlanets(){
         for(let i=0;i<PLANET_COUNT;i++){
             planetOwners[i]=null;
@@ -673,7 +672,6 @@
     function updatePlanetTMGeneration(deltaMinutes){ for(let i=0;i<PLANET_COUNT;i++) if(planetModules[i].tmLaboratory && planetOwners[i]!==null){ let generated=Math.floor(deltaMinutes*TM_GENERATOR_RATE); if(generated>0) planetTM[i]+=generated; } }
     function releaseBotPlanets(botId){ for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]===botId){ planetOwners[i]=null; planetModules[i]={taxBoost:false, tmLaboratory:false, storageLevel:0, planetMiner:false, teleport:false}; planetIncome[i]=0; planetTM[i]=0; } }
 
-    // События
     function triggerRandomEvent(){
         if(Math.random()>EVENT_CHANCE) return;
         let r=Math.random();
@@ -782,6 +780,7 @@
         if(player.ignoreLevelOnce) player.ignoreLevelOnce=false;
         if(bot.ignoreLevelOnce) bot.ignoreLevelOnce=false;
         resolveCombat(player,bot,true);
+        // Для резонатора счётчик уменьшается в бою (если он был активирован вручную)
         if(player.battleBuffRemaining>0){
             player.battleBuffRemaining--;
             if(player.battleBuffRemaining===0) addLogToGame(`Энергетический резонатор израсходован. Сила вернулась к норме.`,"artifact",true);
@@ -800,7 +799,6 @@
             planetModules[i]={taxBoost:false, tmLaboratory:false, storageLevel:0, planetMiner:false, teleport:false};
             planetIncome[i]=0;
             planetTM[i]=0;
-            // сбрасываем счётчик владельцев, чтобы цена планеты вернулась к базовой
             planetPrevOwnersCount[i]=0;
         }
         player.isDead=true; player.inDock=false; player.dockEnterTime=0;
@@ -837,7 +835,6 @@
         };
     }
 
-    // Перемещение
     async function move(delta){
         if(player.isDead){ addLogToGame("Ваш корабль уничтожен. Начните новую игру.","warning",true); return; }
         if(player.fuel<=0){ addLogToGame("Нет топлива! Заправьтесь.","warning",true); return; }
@@ -888,7 +885,6 @@
         saveGame();
     }
 
-    // Обычные задания
     function generateMission(){
         if(missionCompleted) return;
         if(currentMission&&!currentMission.completed) return;
@@ -978,7 +974,6 @@
         return false;
     }
 
-    // Интерфейс планеты (полный, с улучшением склада)
     function openPlanetMenu(planetNumber){
         let modal=document.createElement("div"); modal.className="modal";
         let prices=planetPrices[planetNumber-1], stocks=planetStocks[planetNumber-1], ship=getShip(player.shipLevel);
@@ -1062,7 +1057,6 @@
         modal.querySelector("#closePlanetMenu").onclick=()=>modal.remove();
     }
 
-    // Боты с целенаправленным движением
     function getClosestEnemyPosition(bot){
         let enemies = [];
         for(let other of bots){
@@ -1132,7 +1126,6 @@
                 continue;
             }
         }
-
         let planetsWithBots = new Set();
         for(let b of bots) if(!b.inDock) planetsWithBots.add(b.currentPlanet);
         for(let planet of planetsWithBots){
@@ -1145,7 +1138,6 @@
                 resolveCombat(attacker,defender,false);
             }
         }
-
         for(let bot of bots){
             if(bot.inDock) continue;
             if(now>=bot.nextMoveTime){
@@ -1230,7 +1222,6 @@
     function startBotAI(){ if(botInterval) clearInterval(botInterval); botInterval=setInterval(botAI,500); }
     function scheduleBotCreation(){ if(botCreationTimeout) clearTimeout(botCreationTimeout); botCreationTimeout=setTimeout(()=>{ let level1Count=bots.filter(b=>b.level===1).length; if(bots.length<MAX_BOTS && level1Count<MAX_LEVEL1_BOTS) createBot(1,0); scheduleBotCreation(); },BOT_CREATE_INTERVAL_MS); }
 
-    // Магазин
     function openShipShopModal(){
         let shopDiv=document.getElementById("shopPanel");
         shopDiv.classList.remove("hidden");
@@ -1277,7 +1268,6 @@
         }
     }
 
-    // Док
     function updateDockLog(){ if(!currentDockModal) return; let d=currentDockModal.querySelector(".dock-log"); if(d){ let main=document.getElementById("logBox"); if(main){ d.innerHTML=main.innerHTML; d.scrollTop=d.scrollHeight; } } }
     function reopenDock(){ isRestoringDock=true; openDock(true); isRestoringDock=false; }
     function openDock(restore=false){
@@ -1420,7 +1410,6 @@
         if(currentDockModal) updateDockLog();
     }
 
-    // Симуляция пропущенного времени
     function simulateTimePassed(ms){
         if(ms<=0 || ms>12*60*60*1000) return;
         let minutes = ms/60000;
@@ -1501,19 +1490,19 @@
         html+=`</table><p>При покупке корабля все установленные модули сбрасываются. Для кораблей 5+ уровня требуется также Тёмная материя.</p></div>`;
         html+=`<div class="info-section"><h3>✨ АРТЕФАКТЫ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Количество использований</th></tr>`;
         for(let [id,art] of Object.entries(ARTIFACTS)){ html+=`<tr><td>${art.name}</td><td>${art.desc}</td><td>${art.uses}</td></tr>`; }
-        html+=`</table><p>Артефакты можно найти при перелётах (шанс 0.5%). Боевые активируются автоматически, "Матрица удачи" и "Редкий кристалл" — по клику.</p></div>`;
+        html+=`</table><p>Артефакты можно найти при перелётах (шанс 0.5%). Активация: <b>по клику</b> (кроме "Амулет превосходства" и "Временная маскировка" – они срабатывают автоматически).</p></div>`;
         html+=`<div class="info-section"><h3>🔧 МОДУЛИ КОРАБЛЯ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Цена (💰)</th></tr>
-                <tr><td>Добытчик ТМ</td><td>+1 ТМ за перелёт</td><td>${MODULE_HARVESTER_COST}</td></tr>
-                <tr><td>Генератор СС</td><td>+2 СС за перелёт</td><td>${MODULE_SS_GENERATOR_COST}</td></tr>
-                <tr><td>Оптимизатор полёта</td><td>Гиперпрыжок 25 СС, вход в док 50 СС</td><td>${MODULE_OPTIMIZER_COST}</td></tr>
-            </table></div>`;
+                 <tr><td>Добытчик ТМ</td><td>+1 ТМ за перелёт</td><td>${MODULE_HARVESTER_COST}</td></tr>
+                 <tr><td>Генератор СС</td><td>+2 СС за перелёт</td><td>${MODULE_SS_GENERATOR_COST}</td></tr>
+                 <tr><td>Оптимизатор полёта</td><td>Гиперпрыжок 25 СС, вход в док 50 СС</td><td>${MODULE_OPTIMIZER_COST}</td></tr>
+             </table></div>`;
         html+=`<div class="info-section"><h3>🏭 МОДУЛИ ПЛАНЕТ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Цена (💰)</th></tr>
-                <tr><td>Усиленный сбор налогов</td><td>Доход от продаж 20% (вместо 10%)</td><td>${MODULE_PLANET_TAX_COST}</td></tr>
-                <tr><td>Лаборатория ТМ</td><td>Генерация ТМ 20 ед/мин (вместо 10)</td><td>${MODULE_PLANET_TM_LAB_COST}</td></tr>
-                <tr><td>Добытчик ресурсов</td><td>Генерирует 5–20 кредитов каждые 10 мин</td><td>${MODULE_PLANET_MINER_COST}</td></tr>
-                <tr><td>Телепорт</td><td>Позволяет телепортироваться на планету из дока</td><td>${MODULE_PLANET_TELEPORT_COST}</td></tr>
-                <tr><td>Складские ангары (улучшение)</td><td>Увеличивает вместимость склада на 1000 ед. (до 6000)</td><td>уровень 1:5000, далее +5000</td></tr>
-            </table></div>`;
+                 <tr><td>Усиленный сбор налогов</td><td>Доход от продаж 20% (вместо 10%)</td><td>${MODULE_PLANET_TAX_COST}</td></tr>
+                 <tr><td>Лаборатория ТМ</td><td>Генерация ТМ 20 ед/мин (вместо 10)</td><td>${MODULE_PLANET_TM_LAB_COST}</td></tr>
+                 <tr><td>Добытчик ресурсов</td><td>Генерирует 5–20 кредитов каждые 10 мин</td><td>${MODULE_PLANET_MINER_COST}</td></tr>
+                 <tr><td>Телепорт</td><td>Позволяет телепортироваться на планету из дока</td><td>${MODULE_PLANET_TELEPORT_COST}</td></tr>
+                 <tr><td>Складские ангары (улучшение)</td><td>Увеличивает вместимость склада на 1000 ед. (до 6000)</td><td>уровень 1:5000, далее +5000</td></tr>
+             </table></div>`;
         html+=`<div class="info-section"><h3>📜 ОСОБЕННОСТИ ИГРЫ</h3>
         <p>• При гибели игрока весь прогресс сбрасывается (корабли, модули, планеты, артефакты). Цена планет возвращается к базовой.<br>
         • Боты могут покупать планеты, устанавливать модули, улучшать склады.<br>
