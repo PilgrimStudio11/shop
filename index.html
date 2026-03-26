@@ -109,7 +109,7 @@
     </div>
 </div>
 <script>
-    // ------------------- КОНФИГ -------------------
+    // ======================= КОНФИГ =======================
     const PLANET_COUNT = 1000;
     const FUEL_PRICE = 2;
     const START_CREDITS = 5000;
@@ -122,7 +122,7 @@
     const GOODS_FIND_AMOUNT = [5,10];
     const GOODS_FIND_TYPES = ["gold","food"];
     const ARTIFACT_FIND_CHANCE = 0.005;   // 0.5%
-    const EVENT_CHANCE = 0.03;            // 3% шанс события
+    const EVENT_CHANCE = 0.03;
     const BOT_MOVE_DELAY_MIN = 1000;
     const BOT_MOVE_DELAY_MAX = 3000;
     const BOT_CREATE_INTERVAL_MS = 10*60*1000;
@@ -184,10 +184,10 @@
     };
     let playerArtifacts = []; // [{id, usesLeft, count}]
 
-    function addArtifact(id, uses){
-        let existing = playerArtifacts.find(a=>a.id===id && a.usesLeft===uses);
+    function addArtifact(id, usesLeft){
+        let existing = playerArtifacts.find(a=>a.id===id && a.usesLeft===usesLeft);
         if(existing) existing.count++;
-        else playerArtifacts.push({id, usesLeft:uses, count:1});
+        else playerArtifacts.push({id, usesLeft, count:1});
     }
     function useArtifact(id){
         let idx = playerArtifacts.findIndex(a=>a.id===id);
@@ -197,9 +197,36 @@
         else playerArtifacts.splice(idx,1);
         return true;
     }
-    function getArtifactCount(id){
+    function activateArtifact(id){
         let art = playerArtifacts.find(a=>a.id===id);
-        return art ? art.count : 0;
+        if(!art) return false;
+        switch(id){
+            case "amuletSupremacy":
+                player.ignoreLevelOnce = true;
+                addLogToGame(`✨ Активирован Амулет превосходства! Следующий бой без ограничения уровней.`,"artifact",true);
+                break;
+            case "tempMask":
+                player.stealthRemaining = 10;
+                addLogToGame(`✨ Активирована Временная маскировка! Боты не будут атаковать 10 ходов.`,"artifact",true);
+                break;
+            case "luckMatrix":
+                player.luckBoostRemaining = 10;
+                addLogToGame(`✨ Активирована Матрица удачи! Шанс находок увеличен на 10 ходов.`,"artifact",true);
+                break;
+            case "energyResonator":
+                player.battleBuffRemaining = 3;
+                addLogToGame(`✨ Активирован Энергетический резонатор! Сила удвоена на 3 боя.`,"artifact",true);
+                break;
+            case "rareCrystal":
+                player.credits += 10000;
+                addLogToGame(`✨ Вы обменяли редкий кристалл на 10000💰!`,"success",true);
+                break;
+            default: return false;
+        }
+        useArtifact(id);
+        updateUI();
+        saveGame();
+        return true;
     }
 
     let player = {
@@ -268,7 +295,18 @@
     }
     function getLevelFromWins(wins){ return Math.floor(wins/7)+1; }
     function saveGame(){ let save={player,bots,planetStocks,planetPrices,lastPriceUpdate,lastMissionUpdate,currentMission,missionCompleted,nextBotId,planetOwners,planetPrevOwnersCount,planetIncome,planetTM,planetModules,playerArtifacts}; localStorage.setItem("starNomadFull",JSON.stringify(save)); }
-    function loadGame(){ let raw=localStorage.getItem("starNomadFull"); if(!raw) return false; try{ let data=JSON.parse(raw); player=data.player; bots=data.bots; planetStocks=data.planetStocks; planetPrices=data.planetPrices; lastPriceUpdate=data.lastPriceUpdate; lastMissionUpdate=data.lastMissionUpdate; currentMission=data.currentMission; missionCompleted=data.missionCompleted; nextBotId=data.nextBotId; planetOwners=data.planetOwners||[]; planetPrevOwnersCount=data.planetPrevOwnersCount||[]; planetIncome=data.planetIncome||[]; planetTM=data.planetTM||[]; planetModules=data.planetModules||[]; playerArtifacts=data.playerArtifacts||[]; if(!planetOwners.length) initPlanets(); if(!planetStocks) planetStocks=initStocks(); if(!planetPrices){ planetPrices=[]; for(let i=0;i<PLANET_COUNT;i++) planetPrices[i]=generatePricesForPlanet(i+1,lastPriceUpdate); } player.level=getLevelFromWins(player.wins); if(player.isDead&&player.hull>0) player.isDead=false; for(let b of bots) if(b.nextMoveTime===undefined) b.nextMoveTime=Date.now()+Math.random()*(BOT_MOVE_DELAY_MAX-BOT_MOVE_DELAY_MIN)+BOT_MOVE_DELAY_MIN; return true; }catch(e){ return false; } }
+    function loadGame(){ let raw=localStorage.getItem("starNomadFull"); if(!raw) return false; try{ let data=JSON.parse(raw); player=data.player; bots=data.bots; planetStocks=data.planetStocks; planetPrices=data.planetPrices; lastPriceUpdate=data.lastPriceUpdate; lastMissionUpdate=data.lastMissionUpdate; currentMission=data.currentMission; missionCompleted=data.missionCompleted; nextBotId=data.nextBotId; planetOwners=data.planetOwners||[]; planetPrevOwnersCount=data.planetPrevOwnersCount||[]; planetIncome=data.planetIncome||[]; planetTM=data.planetTM||[]; planetModules=data.planetModules||[]; playerArtifacts=data.playerArtifacts||[]; 
+        // Миграция старых данных: если у артефакта нет count, добавить count=1
+        for(let a of playerArtifacts){
+            if(a.count===undefined) a.count=1;
+            if(a.usesLeft===undefined && a.uses) a.usesLeft = a.uses;
+        }
+        if(!planetOwners.length) initPlanets();
+        if(!planetStocks) planetStocks=initStocks();
+        if(!planetPrices){ planetPrices=[]; for(let i=0;i<PLANET_COUNT;i++) planetPrices[i]=generatePricesForPlanet(i+1,lastPriceUpdate); }
+        player.level=getLevelFromWins(player.wins); if(player.isDead&&player.hull>0) player.isDead=false;
+        for(let b of bots) if(b.nextMoveTime===undefined) b.nextMoveTime=Date.now()+Math.random()*(BOT_MOVE_DELAY_MAX-BOT_MOVE_DELAY_MIN)+BOT_MOVE_DELAY_MIN;
+        return true; }catch(e){ return false; } }
     function createNewPlayerInCurrentWorld(){ player={credits:START_CREDITS,cargo:{},wins:0,level:1,shipLevel:1,currentPlanet:Math.floor(Math.random()*PLANET_COUNT)+1,fuel:getShip(1).fuelCap,strangePower:START_STRANGE_POWER,darkMatter:0,hull:100,isDead:false,immunityUntil:Date.now()+IMMUNITY_DURATION,hasTMHarvester:false,hasSSGenerator:false,hasOptimizer:false,inDock:false,missionsCompleted:0,stealthRemaining:0,luckBoostRemaining:0,battleBuffRemaining:0,ignoreLevelOnce:false,lastMissionBonus10:0,lastMissionBonus100:0}; GOODS.forEach(g=>player.cargo[g.id]=0); playerArtifacts=[]; addLogToGame(`Новый корабль создан! Иммунитет на ${IMMUNITY_DURATION/60000} мин.`,"success",true); saveGame(); }
     function resetWorldAndNewPlayer(){ planetStocks=initStocks(); planetPrices=[]; for(let i=0;i<PLANET_COUNT;i++) planetPrices[i]=generatePricesForPlanet(i+1,Date.now()); lastPriceUpdate=Date.now(); lastMissionUpdate=Date.now(); bots=[]; nextBotId=100; initPlanets(); for(let i=0;i<20;i++) createBot(1,0); createNewPlayerInCurrentWorld(); currentMission=null; missionCompleted=false; saveGame(); }
     function createBot(level,wins){ let shipLevel=Math.min(level,21); let bot={id:nextBotId++,name:`Bot-${nextBotId-1}`,credits:5000,cargo:{},wins:wins,level:level,shipLevel:shipLevel,currentPlanet:Math.floor(Math.random()*PLANET_COUNT)+1,hull:100,darkMatter:0,strangePower:START_STRANGE_POWER,fuel:getShip(shipLevel).fuelCap,nextMoveTime:Date.now()+Math.random()*(BOT_MOVE_DELAY_MAX-BOT_MOVE_DELAY_MIN)+BOT_MOVE_DELAY_MIN,hasTMHarvester:false,hasSSGenerator:false,hasOptimizer:false,missionGood:null,missionQty:0,missionBought:0,missionTargetPlanet:null}; GOODS.forEach(g=>bot.cargo[g.id]=0); for(let g of GOODS) if(Math.random()<0.3) bot.cargo[g.id]=Math.floor(Math.random()*10); bots.push(bot); if(gameActive) addLogToGame(`Новый бот появился: ${bot.name}`,"normal",false); return bot; }
@@ -285,17 +323,13 @@
     }
     function tryFindGoods(entity,isPlayer){ 
         let chance = GOODS_FIND_CHANCE;
-        let amountBonus = 1;
-        if(isPlayer && player.luckBoostRemaining>0){
-            chance *= 1.5;
-            amountBonus = 1.5;
-        }
+        if(isPlayer && player.luckBoostRemaining>0) chance *= 1.5;
         if(Math.random()>chance) return false;
         let goodType=GOODS_FIND_TYPES[Math.floor(Math.random()*GOODS_FIND_TYPES.length)];
         let good=GOODS.find(g=>g.id===goodType);
         if(!good) return false;
         let amount=Math.floor(Math.random()*(GOODS_FIND_AMOUNT[1]-GOODS_FIND_AMOUNT[0]+1)+GOODS_FIND_AMOUNT[0]);
-        if(isPlayer && player.luckBoostRemaining>0) amount = Math.floor(amount * amountBonus);
+        if(isPlayer && player.luckBoostRemaining>0) amount = Math.floor(amount * 1.5);
         let ship=getShip(entity.shipLevel);
         let currentCargo=Object.values(entity.cargo).reduce((a,b)=>a+b,0);
         let freeSpace=ship.cargo-currentCargo;
@@ -664,7 +698,7 @@
         modal.querySelector("#closePlanetMenu").onclick=()=>modal.remove();
     }
 
-    // Боты (полная версия с улучшениями, включая upgradePlanetStorage)
+    // Боты
     function botTradeAndUpgrade(bot){
         let botShip=getShip(bot.shipLevel), totalCargo=Object.values(bot.cargo).reduce((a,b)=>a+b,0);
         let planetIdx=bot.currentPlanet-1, prices=planetPrices[planetIdx], stocks=planetStocks[planetIdx];
@@ -820,7 +854,7 @@
     function updateRanking(){
         let all=[{name:"⭐ ВЫ",level:player.level,power:getTotalPower(player),wins:player.wins},...bots.map(b=>({name:b.name,level:b.level,power:getTotalPower(b),wins:b.wins}))];
         all.sort((a,b)=>b.level-a.level||b.wins-a.wins);
-        let html=`<table class="info-table"><thead>  option<th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th> </thead><tbody>`;
+        let html=`<table class="info-table"><thead>  <tr><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></tr> </thead><tbody>`;
         all.forEach(p=>html+=`<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
         html+=`</tbody></table><p>Всего ботов: ${bots.length}</p>`;
         document.getElementById("rankingList").innerHTML=html;
@@ -851,10 +885,14 @@
                 el.style.cursor="pointer";
                 el.onclick=()=>{
                     if(confirm("Обменять редкий кристалл на 10000 кредитов?")){
-                        useArtifact("rareCrystal");
-                        player.credits+=10000;
-                        addLogToGame("Вы использовали редкий кристалл и получили 10000💰!","success",true);
-                        updateUI(); saveGame();
+                        if(activateArtifact("rareCrystal")) updateUI();
+                    }
+                };
+            } else {
+                el.style.cursor="pointer";
+                el.onclick=()=>{
+                    if(confirm(`Активировать ${ARTIFACTS[id].name}?`)){
+                        if(activateArtifact(id)) updateUI();
                     }
                 };
             }
@@ -890,22 +928,17 @@
         if(ms<=0 || ms>12*60*60*1000) return;
         let minutes = ms/60000;
         updatePlanetTMGeneration(minutes);
-        // Обновление цен
         let priceSteps = Math.floor(ms/PRICE_REFRESH_INTERVAL_MS);
         for(let i=0;i<priceSteps;i++) refreshPricesOnly();
-        // Обновление запасов
         let stockSteps = Math.floor(ms/STOCK_REPLENISH_INTERVAL_MS);
         for(let i=0;i<stockSteps;i++) replenishStocks();
-        // Обновление заданий
         let missionSteps = Math.floor(ms/MISSION_REFRESH_INTERVAL_MS);
         for(let i=0;i<missionSteps;i++) updateMissionByTimer();
-        // Симуляция ботов
         let avgMoveDelay = (BOT_MOVE_DELAY_MIN + BOT_MOVE_DELAY_MAX)/2;
         let moveCount = Math.floor(ms/avgMoveDelay);
         let maxIter = Math.min(moveCount, 1000);
         for(let iter=0;iter<maxIter;iter++){
             for(let bot of bots){
-                // Движение
                 let dir = Math.random()<0.5?-1:1;
                 let newPlanet = bot.currentPlanet + dir;
                 if(newPlanet<1) newPlanet=PLANET_COUNT;
@@ -934,7 +967,6 @@
                 let newLevel = getLevelFromWins(bot.wins);
                 if(newLevel>bot.level) bot.level=newLevel;
             }
-            // Бои между ботами
             let planetsWithBots = new Set();
             for(let bot of bots) planetsWithBots.add(bot.currentPlanet);
             for(let planet of planetsWithBots){
@@ -945,7 +977,6 @@
                 if(getTotalPower(attacker) > getTotalPower(defender)*(1+BOT_ATTACK_THRESHOLD)) resolveCombat(attacker,defender,false);
             }
         }
-        // Создание новых ботов
         let botCreateSteps = Math.floor(ms/BOT_CREATE_INTERVAL_MS);
         for(let i=0;i<botCreateSteps;i++){
             let level1Count = bots.filter(b=>b.level===1).length;
@@ -966,19 +997,19 @@
         html+=`</table><p>При покупке корабля все установленные модули сбрасываются. Для кораблей 5+ уровня требуется также Тёмная материя.</p></div>`;
         html+=`<div class="info-section"><h3>✨ АРТЕФАКТЫ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Количество использований</th></tr>`;
         for(let [id,art] of Object.entries(ARTIFACTS)){ html+=`<tr><td>${art.name}</td><td>${art.desc}</td><td>${art.uses}</td></tr>`; }
-        html+=`</table><p>Артефакты можно найти при перелётах (шанс 0.5%). Они хранятся в инвентаре и активируются автоматически при соответствующих условиях. Редкий кристалл можно обменять на кредиты.</p></div>`;
+        html+=`</table><p>Артефакты можно найти при перелётах (шанс 0.5%). Они хранятся в инвентаре. Кликните по артефакту, чтобы активировать.</p></div>`;
         html+=`<div class="info-section"><h3>🔧 МОДУЛИ КОРАБЛЯ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Цена (💰)</th></tr>
-            <tr><td>Добытчик ТМ</td><td>+1 ТМ за перелёт</td><td>${MODULE_HARVESTER_COST}</td></tr>
-            <tr><td>Генератор СС</td><td>+2 СС за перелёт</td><td>${MODULE_SS_GENERATOR_COST}</td></tr>
-            <tr><td>Оптимизатор полёта</td><td>Гиперпрыжок 25 СС, вход в док 50 СС</td><td>${MODULE_OPTIMIZER_COST}</td></tr>
-        </table></div>`;
+             <tr><td>Добытчик ТМ</td><td>+1 ТМ за перелёт</td><td>${MODULE_HARVESTER_COST}</td></tr>
+             <tr><td>Генератор СС</td><td>+2 СС за перелёт</td><td>${MODULE_SS_GENERATOR_COST}</td></tr>
+             <tr><td>Оптимизатор полёта</td><td>Гиперпрыжок 25 СС, вход в док 50 СС</td><td>${MODULE_OPTIMIZER_COST}</td></tr>
+         </table></div>`;
         html+=`<div class="info-section"><h3>🏭 МОДУЛИ ПЛАНЕТ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Цена (💰)</th></tr>
-            <tr><td>Усиленный сбор налогов</td><td>Доход от продаж 20% (вместо 10%)</td><td>${MODULE_PLANET_TAX_COST}</td></tr>
-            <tr><td>Лаборатория ТМ</td><td>Генерация ТМ 20 ед/мин (вместо 10)</td><td>${MODULE_PLANET_TM_LAB_COST}</td></tr>
-            <tr><td>Добытчик ресурсов</td><td>Генерирует 5–20 кредитов каждые 10 мин</td><td>${MODULE_PLANET_MINER_COST}</td></tr>
-            <tr><td>Телепорт</td><td>Позволяет телепортироваться на планету из дока</td><td>${MODULE_PLANET_TELEPORT_COST}</td></tr>
-            <tr><td>Складские ангары (улучшение)</td><td>Увеличивает вместимость склада на 500 ед. (до 3500)</td><td>уровень 1:5000, далее +5000</td></tr>
-        </table></div>`;
+             <tr><td>Усиленный сбор налогов</td><td>Доход от продаж 20% (вместо 10%)</td><td>${MODULE_PLANET_TAX_COST}</td></tr>
+             <tr><td>Лаборатория ТМ</td><td>Генерация ТМ 20 ед/мин (вместо 10)</td><td>${MODULE_PLANET_TM_LAB_COST}</td></tr>
+             <tr><td>Добытчик ресурсов</td><td>Генерирует 5–20 кредитов каждые 10 мин</td><td>${MODULE_PLANET_MINER_COST}</td></tr>
+             <tr><td>Телепорт</td><td>Позволяет телепортироваться на планету из дока</td><td>${MODULE_PLANET_TELEPORT_COST}</td></tr>
+             <tr><td>Складские ангары (улучшение)</td><td>Увеличивает вместимость склада на 500 ед. (до 3500)</td><td>уровень 1:5000, далее +5000</td></tr>
+         </table></div>`;
         html+=`<div class="info-section"><h3>📜 ОСОБЕННОСТИ ИГРЫ</h3>
         <p>• При гибели игрока весь прогресс сбрасывается (корабли, модули, планеты, артефакты).<br>
         • Боты могут покупать планеты, устанавливать модули, улучшать склады.<br>
