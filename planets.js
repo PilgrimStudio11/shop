@@ -1,8 +1,8 @@
-// planets.js – покупка планет, модули планет, сбор дохода
+// planets.js – планеты и их модули
 
 import { CONFIG } from './config.js';
 import { player } from './player.js';
-import { addLogToGame, saveGame } from './utils.js';
+import { addLogToGame, randomRange, saveGame } from './utils.js';
 
 export let planetOwners = new Array(CONFIG.PLANET_COUNT).fill(null);
 export let planetPrevOwnersCount = new Array(CONFIG.PLANET_COUNT).fill(0);
@@ -10,9 +10,6 @@ export let planetIncome = new Array(CONFIG.PLANET_COUNT).fill(0);
 export let planetTM = new Array(CONFIG.PLANET_COUNT).fill(0);
 export let planetMinerIncome = new Array(CONFIG.PLANET_COUNT).fill(0);
 export let planetModules = [];
-for (let i = 0; i < CONFIG.PLANET_COUNT; i++) {
-    planetModules[i] = { tmLaboratory: false, storageLevel: 0, planetMiner: false, teleport: false };
-}
 
 export function initPlanets() {
     for (let i = 0; i < CONFIG.PLANET_COUNT; i++) {
