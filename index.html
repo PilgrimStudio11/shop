@@ -14,9 +14,10 @@
         .header { background: #071524; padding: 12px 20px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; border-bottom: 1px solid #1f4970; }
         .stat { background: #0a111f; padding: 5px 14px; border-radius: 32px; font-size: 13px; }
         .stat span { color: #ffcf6e; }
-        .cargo-row, .artifact-row, .active-effects { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; justify-content: center; background: #03070faa; padding: 6px; border-radius: 40px; }
-        .cargo-item, .artifact-item, .active-effects .stat { background: #07121f; padding: 3px 12px; border-radius: 40px; font-size: 12px; white-space: nowrap; }
+        .cargo-row, .artifact-row, .active-effects, .components-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; justify-content: center; background: #03070faa; padding: 6px; border-radius: 40px; }
+        .cargo-item, .artifact-item, .active-effects .stat, .component-item { background: #07121f; padding: 3px 12px; border-radius: 40px; font-size: 12px; white-space: nowrap; }
         .artifact-item { background: #3a2a1a; color: #ffcf6e; cursor: pointer; }
+        .component-item { background: #1a3a2a; color: #a0ffc0; }
         .planet-card { background: #07121faa; border-radius: 28px; padding: 20px; text-align: center; border: 1px solid #2a577a; cursor: pointer; margin-bottom: 20px; transition: 0.1s; }
         .planet-name { font-size: 28px; font-weight: bold; }
         .nav-buttons, .hyper-buttons { display: flex; justify-content: center; gap: 15px; margin: 10px 0; flex-wrap: wrap; }
@@ -30,8 +31,9 @@
         .log-entry.artifact { border-left-color: #ffaa66; color: #ffe0b3; }
         .log-entry.event { border-left-color: #66ccff; }
         .log-entry.contraband { border-left-color: #ff8844; color: #ffccaa; }
+        .log-entry.craft { border-left-color: #ffaa88; color: #ffddcc; }
         .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display:flex; justify-content:center; align-items:center; z-index:1000; }
-        .modal-content { background: #0f1a2c; border-radius: 32px; padding: 25px; max-width: 800px; width:90%; border:1px solid #5a9fd0; max-height:80vh; overflow-y:auto; }
+        .modal-content { background: #0f1a2c; border-radius: 32px; padding: 25px; max-width: 900px; width:90%; border:1px solid #5a9fd0; max-height:80vh; overflow-y:auto; }
         .modal-buttons { display: flex; gap: 15px; justify-content: center; margin-top: 20px; }
         .trade-row { display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0; }
         .trade-item { background: #03070f; border-radius: 20px; padding: 10px; flex:1; min-width:150px; }
@@ -48,8 +50,8 @@
         .info-table { width:100%; border-collapse:collapse; font-size:12px; }
         .info-table th, .info-table td { padding: 6px 4px; text-align:left; border-bottom:1px solid #2a577a; background:#0a1a2a; }
         .dock-timer { background: #0a111f; padding: 8px 16px; border-radius: 32px; font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 10px; }
-        .dock-timer span { color: #ffcf6e; }
-        .artifact-market-item { background: #07121f; border-radius: 16px; padding: 8px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .artifact-market-item, .component-market-item, .craft-item, .module-inventory-item { background: #07121f; border-radius: 16px; padding: 8px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .craft-progress { background: #0a1a2a; padding: 8px; border-radius: 16px; margin: 8px 0; }
     </style>
 </head>
 <body>
@@ -84,6 +86,7 @@
             <div class="stat">🎲 РЕЙТИНГ К: <span id="contrabandRatingVal">50</span></div>
         </div>
         <div class="cargo-row" id="cargoDisplay"></div>
+        <div class="components-row" id="componentsDisplay"></div>
         <div class="active-effects" id="activeEffects"></div>
         <div class="artifact-row" id="artifactDisplay"></div>
         <div class="main-area">
@@ -144,8 +147,55 @@
     const RETREAT_COST = 1000;
     const ROCKET_POWER = 2;
     const TM_POWER = 0.01;
-    const MARKET_COMMISSION = 0.05; // 5%
+    const MARKET_COMMISSION = 0.05;
+    // Крафт
+    const COMPONENTS = [
+        { id: "comp1", name: "Наночип", basePrice: 2000 },
+        { id: "comp2", name: "Энергоячейка", basePrice: 1500 },
+        { id: "comp3", name: "Кварцевый резонатор", basePrice: 3000 },
+        { id: "comp4", name: "Тёмный кристалл", basePrice: 5000 },
+        { id: "comp5", name: "Плазменный инжектор", basePrice: 4000 }
+    ];
+    const MODULE_BLUEPRINTS = {
+        harvester: { name: "Чертёж: Добытчик ТМ", moduleType: "hasTMHarvester", baseEffect: 1, upgradeEffect: 1, costTM: 500, installCost: 5000, upgradeCostSS: 100 },
+        generator: { name: "Чертёж: Генератор СС", moduleType: "hasSSGenerator", baseEffect: 2, upgradeEffect: 2, costTM: 500, installCost: 5000, upgradeCostSS: 100 },
+        optimizer: { name: "Чертёж: Оптимизатор полёта", moduleType: "hasOptimizer", baseEffect: 25, upgradeEffect: 5, costTM: 500, installCost: 5000, upgradeCostSS: 100 }
+    };
+    const UPGRADE_RECIPES = {
+        harvester: { name: "Улучшение: Добытчик ТМ", components: { comp1:2, comp2:1, comp3:1 }, costSS: 100 },
+        generator: { name: "Улучшение: Генератор СС", components: { comp2:2, comp4:1, comp5:1 }, costSS: 100 },
+        optimizer: { name: "Улучшение: Оптимизатор полёта", components: { comp3:2, comp1:1, comp5:1 }, costSS: 100 }
+    };
+    // Новые артефакты
+    const NEW_ARTIFACTS = {
+        navigationCrystal: { name: "Навигационный Кристалл", desc: "Телепорт на любую выбранную планету", uses: 3, type: "teleport", basePrice: 30000 },
+        contrabandNetwork: { name: "Контрабандная сеть", desc: "Мгновенно избегает патруля (1 использование)", uses: 1, type: "escapePatrol", basePrice: 15000 },
+        scanner: { name: "Сканер", desc: "Показывает координаты всех кораблей с их уровнем (1 использование)", uses: 1, type: "scanner", basePrice: 8000 },
+        emergencyAccelerator: { name: "Модуль экстренного ускорения", desc: "Восстанавливает топливо и даёт +20 СС (3 использования)", uses: 3, type: "fuelBoost", basePrice: 20000 }
+    };
+    const ARTIFACTS = {
+        energyResonator: { name: "Энергетический резонатор", desc: "Удваивает силу на 3 боя", uses: 3, type: "battleBuff", powerMultiplier: 2, basePrice: 50000 },
+        amuletSupremacy: { name: "Амулет превосходства", desc: "Один бой без ограничения уровней", uses: 1, type: "ignoreLevel", basePrice: 30000 },
+        tempMask: { name: "Временная маскировка", desc: "10 ходов боты не атакуют", uses: 10, type: "stealth", basePrice: 20000 },
+        rareCrystal: { name: "Редкий кристалл", desc: "Даёт 10000 кредитов", uses: 1, type: "cash", value: 10000, basePrice: 8000 },
+        luckMatrix: { name: "Матрица удачи", desc: "Удваивает находки на 10 ходов", uses: 10, type: "luckBoost", basePrice: 40000 },
+        ...NEW_ARTIFACTS
+    };
 
+    // Глобальные переменные
+    let player = {
+        credits: START_CREDITS, cargo: {}, components: { comp1:0, comp2:0, comp3:0, comp4:0, comp5:0 },
+        wins: 0, level: 1, shipLevel: 1, currentPlanet: 1,
+        fuel: 100, strangePower: START_STRANGE_POWER, darkMatter: 0, hull: 100, isDead: false,
+        immunityUntil: 0, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false,
+        tmHarvesterLevel: 0, ssGeneratorLevel: 0, optimizerLevel: 0,
+        inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0,
+        luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false,
+        lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null,
+        artifactSalesBalance: 0,
+        ownedModules: [], // { type, isUpgrade, level/count }
+        craftingQueue: []   // { type, isUpgrade, requiredComponents, currentComponents, progress, timestamp }
+    };
     const GOODS = [
         { id: "gold", name: "Золото", baseBuy:100, baseSell:100, spread:30, cargoSpace:1 },
         { id: "slaves", name: "Рабы", baseBuy:80, baseSell:80, spread:25, cargoSpace:1 },
@@ -153,7 +203,6 @@
         { id: "rockets", name: "Ракеты", baseBuy:200, baseSell:200, spread:50, cargoSpace:5 },
         { id: "oil", name: "Нефть", baseBuy:60, baseSell:60, spread:20, cargoSpace:1 }
     ];
-
     const MINERALS = [
         { id: "mineral1", name: "Кристаллы Арида", basePrice: 500, cargoSpace:1 },
         { id: "mineral2", name: "Звёздная пыль", basePrice: 800, cargoSpace:1 },
@@ -169,26 +218,6 @@
     const ALL_GOODS = [...GOODS, ...MINERALS.map(m=>({ ...m, baseBuy:m.basePrice, baseSell:m.basePrice }))];
     let mineralPriceMultipliers = MINERALS.map(() => 1.0);
 
-    const ARTIFACTS = {
-        energyResonator: { name: "Энергетический резонатор", desc: "Удваивает силу на 3 боя", uses: 3, type: "battleBuff", powerMultiplier: 2, basePrice: 50000 },
-        amuletSupremacy: { name: "Амулет превосходства", desc: "Один бой без ограничения уровней", uses: 1, type: "ignoreLevel", basePrice: 30000 },
-        tempMask: { name: "Временная маскировка", desc: "10 ходов боты не атакуют", uses: 10, type: "stealth", basePrice: 20000 },
-        rareCrystal: { name: "Редкий кристалл", desc: "Даёт 10000 кредитов", uses: 1, type: "cash", value: 10000, basePrice: 8000 },
-        luckMatrix: { name: "Матрица удачи", desc: "Удваивает находки на 10 ходов", uses: 10, type: "luckBoost", basePrice: 40000 }
-    };
-
-    // Глобальные переменные
-    let player = {
-        credits: START_CREDITS, cargo: {}, wins: 0, level: 1, shipLevel: 1, currentPlanet: 1,
-        fuel: 100, strangePower: START_STRANGE_POWER, darkMatter: 0, hull: 100, isDead: false,
-        immunityUntil: 0, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false,
-        inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0,
-        luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false,
-        lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null,
-        artifactSalesBalance: 0
-    };
-    ALL_GOODS.forEach(g => player.cargo[g.id] = 0);
-
     let bots = [], nextBotId = 100, gameActive = false;
     let planetStocks = [], planetPrices = [], lastPriceUpdate = Date.now(), lastMissionUpdate = Date.now();
     let currentMission = null, missionCompleted = false;
@@ -196,13 +225,17 @@
     let planetOwners = [], planetPrevOwnersCount = [], planetIncome = [], planetTM = [], planetMinerIncome = [], planetModules = [];
     let currentContrabandMission = null, lastContrabandUpdate = Date.now();
     let playerArtifacts = [];
-    let artifactMarket = []; // { artifactId, usesLeft, price, sellerId, sellerIsPlayer, timestamp }
-    let activeContrabandOffers = []; // три задания
-    let artifactPriceHistory = {}; // { artifactId: { totalSum: number, count: number, average: number } }
+    let artifactMarket = [];
+    let componentMarket = [];
+    let componentPriceHistory = {};
+    let activeContrabandOffers = [];
+    let artifactPriceHistory = {};
+    let moduleBlueprintsOwned = [];
+    let upgradeBlueprintsOwned = [];
 
     // ======================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
     function saveGame() {
-        let save = { player, bots, planetStocks, planetPrices, lastPriceUpdate, lastMissionUpdate, currentMission, missionCompleted, nextBotId, planetOwners, planetPrevOwnersCount, planetIncome, planetTM, planetMinerIncome, planetModules, playerArtifacts, currentContrabandMission, lastContrabandUpdate, mineralPriceMultipliers, artifactMarket, activeContrabandOffers, artifactPriceHistory };
+        let save = { player, bots, planetStocks, planetPrices, lastPriceUpdate, lastMissionUpdate, currentMission, missionCompleted, nextBotId, planetOwners, planetPrevOwnersCount, planetIncome, planetTM, planetMinerIncome, planetModules, playerArtifacts, currentContrabandMission, lastContrabandUpdate, mineralPriceMultipliers, artifactMarket, componentMarket, componentPriceHistory, activeContrabandOffers, artifactPriceHistory, moduleBlueprintsOwned, upgradeBlueprintsOwned };
         localStorage.setItem("starNomadFull", JSON.stringify(save));
     }
     function loadGame() {
@@ -230,9 +263,19 @@
             lastContrabandUpdate = data.lastContrabandUpdate || Date.now();
             mineralPriceMultipliers = data.mineralPriceMultipliers || MINERALS.map(() => 1.0);
             artifactMarket = data.artifactMarket || [];
+            componentMarket = data.componentMarket || [];
+            componentPriceHistory = data.componentPriceHistory || {};
             activeContrabandOffers = data.activeContrabandOffers || [];
             artifactPriceHistory = data.artifactPriceHistory || {};
+            moduleBlueprintsOwned = data.moduleBlueprintsOwned || [];
+            upgradeBlueprintsOwned = data.upgradeBlueprintsOwned || [];
             if (player.artifactSalesBalance === undefined) player.artifactSalesBalance = 0;
+            if (player.components === undefined) player.components = { comp1:0, comp2:0, comp3:0, comp4:0, comp5:0 };
+            if (player.tmHarvesterLevel === undefined) player.tmHarvesterLevel = 0;
+            if (player.ssGeneratorLevel === undefined) player.ssGeneratorLevel = 0;
+            if (player.optimizerLevel === undefined) player.optimizerLevel = 0;
+            if (player.ownedModules === undefined) player.ownedModules = [];
+            if (player.craftingQueue === undefined) player.craftingQueue = [];
             for (let a of playerArtifacts) { if (a.count === undefined) a.count = 1; if (a.usesLeft === undefined && a.uses) a.usesLeft = a.uses; }
             if (!planetOwners.length) initPlanets();
             if (!planetStocks) planetStocks = initStocks();
@@ -251,6 +294,12 @@
                 if (b.goal === undefined) b.goal = "explore";
                 if (b.lastDecisionTime === undefined) b.lastDecisionTime = Date.now();
                 if (b.artifactSalesBalance === undefined) b.artifactSalesBalance = 0;
+                if (b.components === undefined) b.components = { comp1:0, comp2:0, comp3:0, comp4:0, comp5:0 };
+                if (b.tmHarvesterLevel === undefined) b.tmHarvesterLevel = 0;
+                if (b.ssGeneratorLevel === undefined) b.ssGeneratorLevel = 0;
+                if (b.optimizerLevel === undefined) b.optimizerLevel = 0;
+                if (b.ownedModules === undefined) b.ownedModules = [];
+                if (b.craftingQueue === undefined) b.craftingQueue = [];
             }
             player.contrabandRating = Number(player.contrabandRating) || 50;
             for (let i = 0; i < mineralPriceMultipliers.length; i++) if (isNaN(mineralPriceMultipliers[i])) mineralPriceMultipliers[i] = 1.0;
@@ -367,6 +416,7 @@
         if (type === "artifact") entry.classList.add("artifact");
         if (type === "event") entry.classList.add("event");
         if (type === "contraband") entry.classList.add("contraband");
+        if (type === "craft") entry.classList.add("craft");
         entry.innerText = msg;
         logDiv.appendChild(entry);
         logDiv.scrollTop = logDiv.scrollHeight;
@@ -386,16 +436,20 @@
     function createBot(level, wins) {
         let shipLevel = Math.min(level, 21);
         let bot = {
-            id: nextBotId++, name: `Bot-${nextBotId - 1}`, credits: 5000, cargo: {}, wins: wins, level: level, shipLevel: shipLevel,
+            id: nextBotId++, name: `Bot-${nextBotId - 1}`, credits: 5000, cargo: {}, components: { comp1:0, comp2:0, comp3:0, comp4:0, comp5:0 },
+            wins: wins, level: level, shipLevel: shipLevel,
             currentPlanet: Math.floor(Math.random() * PLANET_COUNT) + 1, hull: 100, darkMatter: 0, strangePower: START_STRANGE_POWER,
             fuel: getShip(shipLevel).fuelCap, nextMoveTime: Date.now() + Math.random() * BOT_MOVE_DELAY,
-            hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false, contrabandRating: 50, contrabandMission: null,
+            hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false,
+            tmHarvesterLevel: 0, ssGeneratorLevel: 0, optimizerLevel: 0,
+            contrabandRating: 50, contrabandMission: null,
             inDock: false, dockEnterTime: 0, artifacts: [], ignoreLevelOnce: false, stealthRemaining: 0, luckBoostRemaining: 0, battleBuffRemaining: 0,
             goal: "explore", targetPlanet: null, targetBot: null, missionBought: 0, lastDecisionTime: Date.now(),
-            artifactSalesBalance: 0
+            artifactSalesBalance: 0, ownedModules: [], craftingQueue: []
         };
         ALL_GOODS.forEach(g => bot.cargo[g.id] = 0);
         for (let g of GOODS) if (Math.random() < 0.3) bot.cargo[g.id] = Math.floor(Math.random() * 10);
+        for (let comp of COMPONENTS) if (Math.random() < 0.2) bot.components[comp.id] = Math.floor(Math.random() * 3);
         bots.push(bot);
         addLogToGame(`✨ Новый бот появился: ${bot.name}`, "normal", true);
         return bot;
@@ -416,712 +470,305 @@
     }
     function hasArtifact(arr, id) { return arr.some(a => a.id === id); }
 
-    // ======================= ДИНАМИЧЕСКАЯ ЦЕНА АРТЕФАКТОВ =======================
-    function getAveragePrice(artifactId) {
-        let hist = artifactPriceHistory[artifactId];
-        if (!hist || hist.count === 0) return ARTIFACTS[artifactId].basePrice;
+    // Динамическая цена для компонентов
+    function getAverageComponentPrice(compId) {
+        let hist = componentPriceHistory[compId];
+        if (!hist || hist.count === 0) return COMPONENTS.find(c => c.id === compId).basePrice;
         return Math.floor(hist.totalSum / hist.count);
     }
-    function updatePriceHistory(artifactId, price) {
-        if (!artifactPriceHistory[artifactId]) artifactPriceHistory[artifactId] = { totalSum: 0, count: 0 };
-        let hist = artifactPriceHistory[artifactId];
+    function updateComponentPriceHistory(compId, price) {
+        if (!componentPriceHistory[compId]) componentPriceHistory[compId] = { totalSum: 0, count: 0 };
+        let hist = componentPriceHistory[compId];
         hist.totalSum += price;
         hist.count++;
         hist.average = Math.floor(hist.totalSum / hist.count);
         saveGame();
     }
 
-    // ======================= РЫНОК АРТЕФАКТОВ =======================
-    function listArtifactForSale(artifactId, usesLeft, price, sellerId, sellerIsPlayer) {
-        artifactMarket.push({ artifactId, usesLeft, price, sellerId, sellerIsPlayer, timestamp: Date.now() });
-        addLogToGame(`${sellerIsPlayer ? "Вы" : "Бот"} выставил ${ARTIFACTS[artifactId].name} на продажу за ${price}💰.`, "success", sellerIsPlayer);
+    // Рынок компонентов (чёрный рынок)
+    function listComponentForSale(compId, price, sellerId, sellerIsPlayer) {
+        componentMarket.push({ componentId: compId, price, sellerId, sellerIsPlayer, timestamp: Date.now() });
+        addLogToGame(`${sellerIsPlayer ? "Вы" : "Бот"} выставил ${COMPONENTS.find(c=>c.id===compId).name} на продажу за ${price}💰.`, "success", sellerIsPlayer);
         saveGame();
     }
-    function cancelArtifactSale(index, isPlayerCancelling) {
-        let offer = artifactMarket[index];
+    function cancelComponentSale(index, isPlayerCancelling) {
+        let offer = componentMarket[index];
         if (!offer) return false;
-        if (!isPlayerCancelling && offer.sellerIsPlayer) return false; // только игрок может снять свои
+        if (!isPlayerCancelling && offer.sellerIsPlayer) return false;
         if (isPlayerCancelling && !offer.sellerIsPlayer) return false;
-        artifactMarket.splice(index, 1);
-        addLogToGame(`${isPlayerCancelling ? "Вы" : "Бот"} снял артефакт с продажи.`, "success", isPlayerCancelling);
+        componentMarket.splice(index, 1);
+        addLogToGame(`${isPlayerCancelling ? "Вы" : "Бот"} снял компонент с продажи.`, "success", isPlayerCancelling);
         saveGame();
         return true;
     }
-    function buyArtifact(index, buyer, isPlayer, buyerName) {
-        let offer = artifactMarket[index];
+    function buyComponent(index, buyer, isPlayer, buyerName) {
+        let offer = componentMarket[index];
         if (!offer) return false;
         let price = offer.price;
         let commission = Math.floor(price * MARKET_COMMISSION);
         let sellerGets = price - commission;
         if (buyer.credits < price) return false;
         buyer.credits -= price;
-        // добавить артефакт покупателю
-        addArtifact(isPlayer ? playerArtifacts : buyer.artifacts, offer.artifactId, offer.usesLeft);
-        // обновить историю цен
-        updatePriceHistory(offer.artifactId, price);
+        buyer.components[offer.componentId] = (buyer.components[offer.componentId] || 0) + 1;
+        updateComponentPriceHistory(offer.componentId, price);
         if (offer.sellerIsPlayer) {
             player.artifactSalesBalance += sellerGets;
-            addLogToGame(`${buyerName} купил ${ARTIFACTS[offer.artifactId].name} у вас за ${price}💰 (комиссия ${commission}💰). Средства на счёте продаж: ${player.artifactSalesBalance}💰.`, "success", true);
+            addLogToGame(`${buyerName} купил ${COMPONENTS.find(c=>c.id===offer.componentId).name} у вас за ${price}💰 (комиссия ${commission}💰). Средства на счёте продаж: ${player.artifactSalesBalance}💰.`, "success", true);
         } else {
             let sellerBot = bots.find(b => b.id === offer.sellerId);
             if (sellerBot) sellerBot.artifactSalesBalance += sellerGets;
-            addLogToGame(`${buyerName} купил ${ARTIFACTS[offer.artifactId].name} у ${sellerBot.name} за ${price}💰.`, "success", isPlayer);
+            addLogToGame(`${buyerName} купил ${COMPONENTS.find(c=>c.id===offer.componentId).name} у ${sellerBot.name} за ${price}💰.`, "success", isPlayer);
         }
-        artifactMarket.splice(index, 1);
+        componentMarket.splice(index, 1);
         saveGame();
         return true;
     }
-    function withdrawArtifactSales(entity, isPlayer) {
-        let balance = isPlayer ? player.artifactSalesBalance : entity.artifactSalesBalance;
-        if (balance > 0) {
-            if (isPlayer) {
-                player.credits += balance;
-                addLogToGame(`Вы забрали ${balance}💰 со счёта продаж артефактов.`, "success", true);
-                player.artifactSalesBalance = 0;
-            } else {
-                entity.credits += balance;
-                addLogToGame(`${entity.name} забрал ${balance}💰 со счёта продаж артефактов.`, "success", false);
-                entity.artifactSalesBalance = 0;
-            }
-            saveGame();
+
+    // Крафт модулей и улучшений
+    function startCraft(blueprintType, isUpgrade = false) {
+        let blueprint = isUpgrade ? UPGRADE_RECIPES[blueprintType] : MODULE_BLUEPRINTS[blueprintType];
+        if (!blueprint) return false;
+        if (isUpgrade && !upgradeBlueprintsOwned.includes(blueprintType)) { addLogToGame("У вас нет чертежа этого улучшения.", "warning", true); return false; }
+        if (!isUpgrade && !moduleBlueprintsOwned.includes(blueprintType)) { addLogToGame("У вас нет чертежа этого модуля.", "warning", true); return false; }
+        let required = isUpgrade ? blueprint.components : { comp1:5, comp2:5, comp3:5, comp4:5, comp5:5 };
+        for (let [compId, need] of Object.entries(required)) {
+            if ((player.components[compId] || 0) < need) { addLogToGame(`Не хватает ${COMPONENTS.find(c=>c.id===compId).name} (нужно ${need})`, "warning", true); return false; }
         }
-    }
-
-    // ======================= КОНТРАБАНДА =======================
-    function generateContrabandOffers() {
-        let offers = [];
-        for (let level = 1; level <= 3; level++) {
-            let rewardType = Math.random() < 0.5 ? "credits" : "tm";
-            let rewardBase;
-            if (rewardType === "credits") {
-                if (level === 1) rewardBase = Math.floor(Math.random() * 3001) + 5000; // 5000-8000
-                else if (level === 2) rewardBase = Math.floor(Math.random() * 4001) + 8000; // 8000-12000
-                else rewardBase = Math.floor(Math.random() * 6001) + 12000; // 12000-18000
-            } else {
-                if (level === 1) rewardBase = Math.floor(Math.random() * 101) + 100; // 100-200
-                else if (level === 2) rewardBase = Math.floor(Math.random() * 151) + 200; // 200-350
-                else rewardBase = Math.floor(Math.random() * 151) + 350; // 350-500
-            }
-            let fromPlanet, toPlanet;
-            do { fromPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; toPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; } while (fromPlanet === toPlanet);
-            offers.push({ level, fromPlanet, toPlanet, rewardType, rewardBase, completed: false });
+        for (let [compId, need] of Object.entries(required)) {
+            player.components[compId] -= need;
         }
-        activeContrabandOffers = offers;
-        saveGame();
-    }
-
-    function takeContrabandOffer(offerIndex) {
-        let offer = activeContrabandOffers[offerIndex];
-        if (!offer || offer.completed) return false;
-        if (player.contrabandMission) { addLogToGame("У вас уже есть активное контрабандное задание.", "warning", true); return false; }
-        // задание закрепляется, не требуя быть на планете отправления
-        player.contrabandMission = {
-            fromPlanet: offer.fromPlanet,
-            toPlanet: offer.toPlanet,
-            rewardBase: offer.rewardBase,
-            rewardType: offer.rewardType,
-            level: offer.level,
-            cargoTaken: false
-        };
-        addLogToGame(`Вы взяли контрабандное задание (уровень ${offer.level}). Нужно забрать груз на планете #${offer.fromPlanet} и доставить на #${offer.toPlanet}.`, "contraband", true);
-        offer.completed = true;
+        player.craftingQueue.push({ type: blueprintType, isUpgrade, requiredComponents: required, currentComponents: { ...required }, progress: 0, timestamp: Date.now() });
+        addLogToGame(`Крафт ${isUpgrade ? "улучшения" : "модуля"} "${blueprint.name}" начат. Завершится через 60 секунд.`, "craft", true);
         saveGame();
         return true;
     }
-
-    function takeContrabandCargo() {
-        if (!player.contrabandMission) return false;
-        if (player.contrabandMission.cargoTaken) { addLogToGame("Вы уже взяли груз.", "warning", true); return false; }
-        if (player.currentPlanet !== player.contrabandMission.fromPlanet) { addLogToGame("Вы должны быть на планете отправления, чтобы забрать груз.", "warning", true); return false; }
-        let ship = getShip(player.shipLevel);
-        let currentCargo = Object.values(player.cargo).reduce((a, b) => a + b, 0);
-        if (currentCargo + 1 > ship.cargo) { addLogToGame("Недостаточно места в трюме.", "warning", true); return false; }
-        player.cargo["contraband"] = (player.cargo["contraband"] || 0) + 1;
-        player.contrabandMission.cargoTaken = true;
-        addLogToGame(`Вы взяли контрабанду на планете #${player.currentPlanet}. Доставьте на #${player.contrabandMission.toPlanet}.`, "contraband", true);
-        saveGame();
-        return true;
-    }
-
-    function deliverContraband() {
-        if (!player.contrabandMission) return false;
-        if (!player.contrabandMission.cargoTaken) { addLogToGame("Вы ещё не забрали груз на планете отправления.", "warning", true); return false; }
-        if (player.currentPlanet !== player.contrabandMission.toPlanet) return false;
-        let contrabandQty = player.cargo["contraband"] || 0;
-        if (contrabandQty === 0) { addLogToGame("У вас нет контрабанды!", "warning", true); return false; }
-        player.cargo["contraband"]--;
-        if (player.cargo["contraband"] === 0) delete player.cargo["contraband"];
-        let success = Math.random() < (1 - CONTRABAND_ENCOUNTER_CHANCE);
-        let ratingChange = 0;
-        let reward = 0;
-        if (success) {
-            ratingChange = player.contrabandMission.level;
-            reward = player.contrabandMission.rewardBase * (1 + (player.contrabandRating - 50) / 100);
-            if (player.contrabandMission.rewardType === "credits") player.credits += Math.floor(reward);
-            else player.darkMatter += Math.floor(reward);
-            player.contrabandRating = Math.min(100, player.contrabandRating + ratingChange);
-            addLogToGame(`🎉 Контрабанда доставлена! Получено ${Math.floor(reward)}${player.contrabandMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}. Рейтинг +${ratingChange} (текущий ${player.contrabandRating}).`, "contraband", true);
-        } else {
-            ratingChange = -player.contrabandMission.level;
-            player.credits = Math.max(0, player.credits - 1000);
-            player.contrabandRating = Math.max(0, player.contrabandRating + ratingChange);
-            addLogToGame(`❌ Контрабанда провалена! Потеряно 1000💰. Рейтинг ${ratingChange} (текущий ${player.contrabandRating}).`, "contraband", true);
-        }
-        player.contrabandMission = null;
-        // обновить задания (следующая генерация через 15 минут, но можно сразу сгенерировать новые, чтобы у игрока были варианты)
-        generateContrabandOffers();
-        saveGame();
-        return true;
-    }
-
-    async function patrolEncounterWithChoice() {
-        return new Promise((resolve) => {
-            let modal = document.createElement("div"); modal.className = "modal";
-            modal.innerHTML = `<div class="modal-content"><h3>🚨 ПАТРУЛЬ ОСТАНОВИЛ ВАС!</h3><p>Ваш корабль с контрабандой остановлен. Что будете делать?</p><div class="modal-buttons"><button id="bribeBtn">💵 Дать взятку (500💰, 50% успеха)</button><button id="docsBtn">📄 Показать поддельные документы (250💰, 80% успеха)</button><button id="runBtn">🏃‍♂️ Убежать (кинуть кубик)</button></div></div>`;
-            document.body.appendChild(modal);
-            modal.querySelector("#bribeBtn").onclick = () => {
-                modal.remove();
-                if (player.credits < 500) { addLogToGame("Не хватает кредитов для взятки!", "warning", true); resolve(false); return; }
-                player.credits -= 500;
-                if (Math.random() < 0.5) { addLogToGame("Патруль взял взятку и отпустил вас. Контрабанда сохранена.", "success", true); resolve(true); }
-                else { addLogToGame("Патруль взял взятку, но всё равно конфисковал груз! Задание провалено.", "combat", true); resolve(false); }
-            };
-            modal.querySelector("#docsBtn").onclick = () => {
-                modal.remove();
-                if (player.credits < 250) { addLogToGame("Не хватает кредитов для покупки фальшивых документов!", "warning", true); resolve(false); return; }
-                player.credits -= 250;
-                if (Math.random() < 0.8) { addLogToGame("Поддельные документы сработали! Патруль пропустил вас.", "success", true); resolve(true); }
-                else { addLogToGame("Поддельные документы не помогли. Груз конфискован!", "combat", true); resolve(false); }
-            };
-            modal.querySelector("#runBtn").onclick = () => {
-                modal.remove();
-                let diceModal = document.createElement("div"); diceModal.className = "modal";
-                diceModal.innerHTML = `<div class="modal-content dice-modal"><h3>🏃‍♂️ ПОПЫТКА УБЕЖАТЬ</h3><p>Нажмите кнопку, чтобы бросить кубик:</p><button id="rollDiceBtn">🎲 БРОСИТЬ КУБИК</button><div id="diceResult" class="dice-result"></div><div id="diceMessage"></div></div>`;
-                document.body.appendChild(diceModal);
-                let rollBtn = diceModal.querySelector("#rollDiceBtn");
-                let resultDiv = diceModal.querySelector("#diceResult");
-                let msgDiv = diceModal.querySelector("#diceMessage");
-                rollBtn.onclick = () => {
-                    let patrolRoll = Math.floor(Math.random() * 6) + 1;
-                    let playerRoll = Math.floor(Math.random() * 6) + 1;
-                    resultDiv.innerHTML = `Патруль выбросил: ${patrolRoll}<br>Вы выбросили: ${playerRoll}`;
-                    if (playerRoll >= patrolRoll) {
-                        msgDiv.innerHTML = "✅ Вы ушли от погони! Контрабанда сохранена.";
-                        let closeBtn = document.createElement("button"); closeBtn.innerText = "Продолжить";
-                        closeBtn.onclick = () => { diceModal.remove(); resolve(true); };
-                        diceModal.querySelector(".modal-content").appendChild(closeBtn);
-                    } else {
-                        msgDiv.innerHTML = "❌ Патруль догнал вас! Груз конфискован.";
-                        let closeBtn = document.createElement("button"); closeBtn.innerText = "Продолжить";
-                        closeBtn.onclick = () => { diceModal.remove(); resolve(false); };
-                        diceModal.querySelector(".modal-content").appendChild(closeBtn);
-                    }
-                    rollBtn.disabled = true;
-                };
-            };
-        });
-    }
-    async function patrolEncounter(isPlayer) {
-        if (!isPlayer) return false;
-        if (!player.contrabandMission || !player.contrabandMission.cargoTaken) return false;
-        if (Math.random() > CONTRABAND_ENCOUNTER_CHANCE) return false;
-        let success = await patrolEncounterWithChoice();
-        if (success) return false;
-        player.cargo["contraband"] = (player.cargo["contraband"] || 0) - 1;
-        if (player.cargo["contraband"] <= 0) delete player.cargo["contraband"];
-        player.credits = Math.max(0, player.credits - 1000);
-        player.contrabandRating = Math.max(0, player.contrabandRating - 1);
-        player.contrabandMission = null;
-        saveGame();
-        return true;
-    }
-
-    // ======================= УМНЫЕ БОТЫ =======================
-    function botMakeDecision(bot) {
+    function processCrafting() {
         let now = Date.now();
-        if (now - bot.lastDecisionTime < 10000) return;
-        bot.lastDecisionTime = now;
-
-        if (bot.hull < 50 || bot.fuel < 20) { bot.goal = "dock"; return; }
-
-        let nextShip = getShip(bot.shipLevel + 1);
-        if (nextShip && bot.shipLevel < bot.level && bot.credits >= nextShip.cost && bot.darkMatter >= (nextShip.tmCost || 0)) {
-            bot.goal = "upgradeShip";
-            return;
-        }
-
-        let bestTrade = findBestTradeRoute(bot);
-        if (bestTrade && bestTrade.bestProfit > 5000) {
-            bot.goal = "trade";
-            bot.targetPlanet = bestTrade.bestBuyPlanet;
-            bot.tradeData = bestTrade;
-            return;
-        }
-
-        let bestPlanet = findBestPlanetToBuy(bot);
-        if (bestPlanet !== null && bot.credits >= getPlanetPrice(bestPlanet)) {
-            bot.goal = "buyPlanet";
-            bot.targetPlanet = bestPlanet;
-            return;
-        }
-
-        let target = findBestFightTarget(bot);
-        if (target) {
-            bot.goal = "fight";
-            bot.targetBot = target;
-            bot.targetPlanet = target.currentPlanet;
-            return;
-        }
-
-        if (currentMission && !currentMission.completed) {
-            bot.goal = "mission";
-            return;
-        }
-
-        bot.goal = "explore";
-        bot.targetPlanet = null;
-    }
-
-    function findBestTradeRoute(bot) {
-        let ship = getShip(bot.shipLevel);
-        let fuelRange = Math.floor(bot.fuel / 2);
-        let start = bot.currentPlanet;
-        let bestProfit = 0;
-        let bestBuyPlanet = null, bestSellPlanet = null, bestGood = null;
-        for (let i = Math.max(1, start - fuelRange); i <= Math.min(PLANET_COUNT, start + fuelRange); i++) {
-            let buyPrices = planetPrices[i - 1];
-            for (let g of GOODS) {
-                if (buyPrices[g.id].buy < g.baseBuy * 0.8) {
-                    for (let j = Math.max(1, i - fuelRange); j <= Math.min(PLANET_COUNT, i + fuelRange); j++) {
-                        let sellPrices = planetPrices[j - 1];
-                        if (sellPrices[g.id].sell > g.baseSell * 1.2) {
-                            let profitPerUnit = sellPrices[g.id].sell - buyPrices[g.id].buy;
-                            let maxQty = Math.min(ship.cargo / g.cargoSpace, planetStocks[i - 1][g.id], Math.floor(bot.credits / buyPrices[g.id].buy));
-                            let totalProfit = profitPerUnit * maxQty;
-                            if (totalProfit > bestProfit) {
-                                bestProfit = totalProfit;
-                                bestBuyPlanet = i;
-                                bestSellPlanet = j;
-                                bestGood = g;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (bestProfit > 0) return { bestBuyPlanet, bestSellPlanet, bestGood, bestProfit };
-        return null;
-    }
-
-    function findBestPlanetToBuy(bot) {
-        let bestPlanet = null;
-        let bestScore = 0;
-        for (let i = 0; i < PLANET_COUNT; i++) {
-            if (planetOwners[i] !== null && planetOwners[i] !== bot.id) {
-                let ownerLevel = (planetOwners[i] === "player") ? player.level : bots.find(b => b.id === planetOwners[i])?.level;
-                if (ownerLevel && bot.level <= ownerLevel) continue;
-            }
-            let price = getPlanetPrice(i);
-            if (bot.credits < price) continue;
-            let estimatedHourlyIncome = 100 * 0.1;
-            let roiHours = price / estimatedHourlyIncome;
-            let score = 1 / (roiHours + 0.01);
-            if (score > bestScore) {
-                bestScore = score;
-                bestPlanet = i;
-            }
-        }
-        return bestPlanet;
-    }
-
-    function findBestFightTarget(bot) {
-        let bestTarget = null;
-        let bestPowerDiff = 0;
-        for (let other of bots) {
-            if (other.id === bot.id) continue;
-            if (Math.abs(bot.level - other.level) > 1) continue;
-            let powerDiff = getTotalPower(bot) - getTotalPower(other);
-            if (powerDiff > 0 && powerDiff > bestPowerDiff) {
-                bestPowerDiff = powerDiff;
-                bestTarget = other;
-            }
-        }
-        if (!player.isDead && !player.inDock && Date.now() > player.immunityUntil && Math.abs(bot.level - player.level) <= 1) {
-            let powerDiff = getTotalPower(bot) - getTotalPower(player);
-            if (powerDiff > bestPowerDiff) {
-                bestTarget = player;
-            }
-        }
-        return bestTarget;
-    }
-
-    function botMoveTowards(bot, targetPlanet) {
-        if (targetPlanet === null) return 0;
-        if (bot.currentPlanet < targetPlanet) return 1;
-        if (bot.currentPlanet > targetPlanet) return -1;
-        return 0;
-    }
-
-    function botPerformTrade(bot, tradeData) {
-        if (!tradeData) return;
-        if (bot.currentPlanet === tradeData.bestBuyPlanet) {
-            let price = planetPrices[bot.currentPlanet - 1][tradeData.bestGood.id].buy;
-            let maxQty = Math.min(Math.floor(bot.credits / price), planetStocks[bot.currentPlanet - 1][tradeData.bestGood.id], Math.floor((getShip(bot.shipLevel).cargo - Object.values(bot.cargo).reduce((a,b)=>a+b,0)) / tradeData.bestGood.cargoSpace));
-            if (maxQty > 0) {
-                bot.credits -= maxQty * price;
-                bot.cargo[tradeData.bestGood.id] = (bot.cargo[tradeData.bestGood.id] || 0) + maxQty;
-                planetStocks[bot.currentPlanet - 1][tradeData.bestGood.id] -= maxQty;
-                addLogToGame(`${bot.name} купил ${maxQty} ${tradeData.bestGood.name} на планете #${bot.currentPlanet}.`, "goods", false);
-                bot.targetPlanet = tradeData.bestSellPlanet;
-            }
-        } else if (bot.currentPlanet === tradeData.bestSellPlanet) {
-            let qty = bot.cargo[tradeData.bestGood.id] || 0;
-            if (qty > 0) {
-                let price = planetPrices[bot.currentPlanet - 1][tradeData.bestGood.id].sell;
-                bot.credits += qty * price;
-                bot.cargo[tradeData.bestGood.id] = 0;
-                planetStocks[bot.currentPlanet - 1][tradeData.bestGood.id] += qty;
-                addLogToGame(`${bot.name} продал ${qty} ${tradeData.bestGood.name} на планете #${bot.currentPlanet}.`, "goods", false);
-                bot.goal = "explore";
-                bot.tradeData = null;
-            }
-        }
-    }
-
-    function botUpgradeShip(bot) {
-        let nextShip = getShip(bot.shipLevel + 1);
-        if (nextShip && bot.credits >= nextShip.cost && bot.darkMatter >= (nextShip.tmCost || 0)) {
-            bot.credits -= nextShip.cost;
-            bot.darkMatter -= (nextShip.tmCost || 0);
-            bot.shipLevel++;
-            let fuelPercent = bot.fuel / getShip(bot.shipLevel - 1).fuelCap;
-            bot.fuel = Math.min(nextShip.fuelCap, Math.floor(nextShip.fuelCap * fuelPercent));
-            bot.hasTMHarvester = false; bot.hasSSGenerator = false; bot.hasOptimizer = false;
-            addLogToGame(`${bot.name} купил корабль ${nextShip.name}!`, "success", false);
-        }
-        bot.goal = "explore";
-    }
-
-    function botHandleMissions(bot) {
-        if (currentMission && !currentMission.completed) {
-            if (bot.currentPlanet === currentMission.fromPlanet && (bot.missionBought || 0) < currentMission.qty) {
-                let price = planetPrices[bot.currentPlanet - 1][currentMission.good].buy;
-                let needed = currentMission.qty - (bot.missionBought || 0);
-                let canBuy = Math.min(needed, Math.floor(bot.credits / price), planetStocks[bot.currentPlanet - 1][currentMission.good]);
-                if (canBuy > 0) {
-                    bot.credits -= canBuy * price;
-                    bot.cargo[currentMission.good] = (bot.cargo[currentMission.good] || 0) + canBuy;
-                    planetStocks[bot.currentPlanet - 1][currentMission.good] -= canBuy;
-                    bot.missionBought = (bot.missionBought || 0) + canBuy;
-                }
-            } else if (bot.currentPlanet === currentMission.toPlanet && (bot.missionBought || 0) >= currentMission.qty) {
-                let qty = bot.cargo[currentMission.good] || 0;
-                if (qty >= currentMission.qty) {
-                    let price = planetPrices[bot.currentPlanet - 1][currentMission.good].sell;
-                    bot.credits += currentMission.qty * price;
-                    bot.cargo[currentMission.good] -= currentMission.qty;
-                    bot.missionBought = 0;
-                    currentMission.completed = true;
-                    if (currentMission.rewardType === "credits") bot.credits += currentMission.rewardAmount;
-                    else bot.darkMatter += currentMission.rewardAmount;
-                    bot.wins++;
-                    bot.level = Math.floor(bot.wins / 7) + 1;
-                    addLogToGame(`${bot.name} выполнил задание!`, "success", false);
-                }
-            }
-        }
-    }
-
-    function botTryContraband(bot) {
-        // боты берут и выполняют контрабанду аналогично игроку (упрощённо)
-        if (currentContrabandMission && !currentContrabandMission.completed && !bot.contrabandMission) {
-            if (bot.currentPlanet === currentContrabandMission.fromPlanet) {
-                let ship = getShip(bot.shipLevel);
-                let currentCargo = Object.values(bot.cargo).reduce((a,b)=>a+b,0);
-                if (currentCargo + 1 <= ship.cargo) {
-                    bot.cargo["contraband"] = (bot.cargo["contraband"] || 0) + 1;
-                    bot.contrabandMission = { toPlanet: currentContrabandMission.toPlanet, rewardBase: currentContrabandMission.rewardBase, cargoTaken: true };
-                }
-            }
-        } else if (bot.contrabandMission && bot.contrabandMission.cargoTaken) {
-            if (bot.currentPlanet === bot.contrabandMission.toPlanet) {
-                if (bot.cargo["contraband"] > 0) {
-                    let success = Math.random() < 0.8;
-                    let reward = Math.floor(bot.contrabandMission.rewardBase * (1 + (bot.contrabandRating - 50) / 100));
+        for (let i = 0; i < player.craftingQueue.length; i++) {
+            let craft = player.craftingQueue[i];
+            if (now - craft.timestamp >= 60000) {
+                let blueprint = craft.isUpgrade ? UPGRADE_RECIPES[craft.type] : MODULE_BLUEPRINTS[craft.type];
+                if (!blueprint) continue;
+                if (craft.isUpgrade) {
+                    let success = Math.random() < 0.7;
                     if (success) {
-                        bot.credits += reward;
-                        bot.contrabandRating = Math.min(100, bot.contrabandRating + 1);
-                        addLogToGame(`${bot.name} доставил контрабанду и получил ${reward}💰.`, "contraband", false);
+                        addLogToGame(`Успешно создано улучшение для ${blueprint.name}.`, "success", true);
+                        let existing = player.ownedModules.find(m => m.type === craft.type && m.isUpgrade);
+                        if (existing) existing.level++;
+                        else player.ownedModules.push({ type: craft.type, isUpgrade: true, level: 1 });
                     } else {
-                        bot.credits = Math.max(0, bot.credits - 1000);
-                        bot.contrabandRating = Math.max(0, bot.contrabandRating - 1);
-                        addLogToGame(`${bot.name} провалил контрабанду!`, "contraband", false);
-                    }
-                    bot.cargo["contraband"]--;
-                    if (bot.cargo["contraband"] === 0) delete bot.cargo["contraband"];
-                    bot.contrabandMission = null;
-                }
-            } else {
-                if (Math.random() < CONTRABAND_ENCOUNTER_CHANCE) {
-                    if (Math.random() < 0.5) {
-                        bot.cargo["contraband"]--;
-                        if (bot.cargo["contraband"] <= 0) delete bot.cargo["contraband"];
-                        bot.credits = Math.max(0, bot.credits - 1000);
-                        bot.contrabandRating = Math.max(0, bot.contrabandRating - 1);
-                        bot.contrabandMission = null;
-                        addLogToGame(`${bot.name} был пойман патрулём и потерял контрабанду!`, "combat", false);
-                    }
-                }
-            }
-        }
-    }
-
-    function botUseArtifacts(bot) {
-        if (bot.ignoreLevelOnce) return;
-        if (hasArtifact(bot.artifacts, "amuletSupremacy") && bot.targetBot && getTotalPower(bot) < getTotalPower(bot.targetBot)) {
-            useArtifact(bot.artifacts, "amuletSupremacy");
-            bot.ignoreLevelOnce = true;
-            addLogToGame(`${bot.name} активировал Амулет превосходства!`, "artifact", false);
-        }
-        if (hasArtifact(bot.artifacts, "luckMatrix") && Math.random() < 0.2) {
-            useArtifact(bot.artifacts, "luckMatrix");
-            bot.luckBoostRemaining = 10;
-            addLogToGame(`${bot.name} активировал Матрицу удачи!`, "artifact", false);
-        }
-        if (hasArtifact(bot.artifacts, "tempMask") && bot.hull < 50) {
-            useArtifact(bot.artifacts, "tempMask");
-            bot.stealthRemaining = 10;
-            addLogToGame(`${bot.name} активировал Временную маскировку!`, "artifact", false);
-        }
-        if (hasArtifact(bot.artifacts, "energyResonator") && bot.battleBuffRemaining === 0 && bot.targetBot && getTotalPower(bot) < getTotalPower(bot.targetBot)*1.2) {
-            useArtifact(bot.artifacts, "energyResonator");
-            bot.battleBuffRemaining = 3;
-            addLogToGame(`${bot.name} активировал Энергетический резонатор!`, "artifact", false);
-        }
-        if (hasArtifact(bot.artifacts, "rareCrystal") && bot.credits < 20000) {
-            useArtifact(bot.artifacts, "rareCrystal");
-            bot.credits += 10000;
-            addLogToGame(`${bot.name} использовал Редкий кристалл!`, "artifact", false);
-        }
-    }
-
-    function botTradeAndUpgrade(bot) {
-        let botShip = getShip(bot.shipLevel), totalCargo = Object.values(bot.cargo).reduce((a, b) => a + b, 0);
-        let planetIdx = bot.currentPlanet - 1, prices = planetPrices[planetIdx], stocks = planetStocks[planetIdx];
-        if (bot.fuel < botShip.fuelCap && bot.credits >= (botShip.fuelCap - bot.fuel) * FUEL_PRICE) {
-            let needed = botShip.fuelCap - bot.fuel; bot.credits -= needed * FUEL_PRICE; bot.fuel = botShip.fuelCap;
-        }
-        if (bot.hull < 100 && bot.credits >= (100 - bot.hull) * 10) {
-            let needed = 100 - bot.hull; bot.credits -= needed * 10; bot.hull = 100;
-        }
-        if ((bot.cargo.rockets || 0) < 5 && totalCargo + 5 <= botShip.cargo && bot.credits >= prices.rockets.buy * 5 && stocks.rockets >= 5) {
-            let qty = Math.min(5, Math.floor(bot.credits / prices.rockets.buy), stocks.rockets);
-            if (qty > 0) { bot.credits -= qty * prices.rockets.buy; bot.cargo.rockets = (bot.cargo.rockets || 0) + qty; stocks.rockets -= qty; totalCargo += qty * 5; }
-        }
-        for (let g of GOODS) {
-            if (prices[g.id].buy < g.baseBuy * 0.8 && bot.credits >= prices[g.id].buy && totalCargo + g.cargoSpace <= botShip.cargo && stocks[g.id] > 0) {
-                let qty = Math.min(Math.floor(bot.credits / prices[g.id].buy), stocks[g.id]);
-                qty = Math.min(qty, Math.floor((botShip.cargo - totalCargo) / g.cargoSpace));
-                if (qty > 0) { bot.credits -= qty * prices[g.id].buy; bot.cargo[g.id] = (bot.cargo[g.id] || 0) + qty; stocks[g.id] -= qty; totalCargo += qty * g.cargoSpace; break; }
-            }
-        }
-        for (let g of GOODS) {
-            if (prices[g.id].sell > g.baseSell * 1.2 && (bot.cargo[g.id] || 0) > 0) {
-                let qty = bot.cargo[g.id];
-                bot.credits += qty * prices[g.id].sell; bot.cargo[g.id] = 0; stocks[g.id] += qty; break;
-            }
-        }
-        if (!bot.hasTMHarvester && bot.credits >= MODULE_HARVESTER_COST) { bot.credits -= MODULE_HARVESTER_COST; bot.hasTMHarvester = true; }
-        if (!bot.hasSSGenerator && bot.credits >= MODULE_SS_GENERATOR_COST) { bot.credits -= MODULE_SS_GENERATOR_COST; bot.hasSSGenerator = true; }
-        if (!bot.hasOptimizer && bot.credits >= MODULE_OPTIMIZER_COST) { bot.credits -= MODULE_OPTIMIZER_COST; bot.hasOptimizer = true; }
-        if (bot.shipLevel < bot.level && bot.credits >= getShip(bot.shipLevel + 1).cost) {
-            let nextShip = getShip(bot.shipLevel + 1);
-            let tmNeeded = nextShip.tmCost || 0;
-            if (bot.darkMatter >= tmNeeded) {
-                bot.credits -= nextShip.cost; bot.darkMatter -= tmNeeded; bot.shipLevel++;
-                let fuelPercent = bot.fuel / getShip(bot.shipLevel - 1).fuelCap;
-                bot.fuel = Math.min(nextShip.fuelCap, Math.floor(nextShip.fuelCap * fuelPercent));
-                bot.hasTMHarvester = false; bot.hasSSGenerator = false; bot.hasOptimizer = false;
-            }
-        }
-    }
-
-    // ======================= БОТЫ НА РЫНКЕ АРТЕФАКТОВ =======================
-    function botArtifactMarketActions() {
-        for (let bot of bots) {
-            if (bot.inDock) continue;
-            // Продажа лишних артефактов (если больше 1)
-            for (let art of bot.artifacts) {
-                if (art.count > 1) {
-                    let avgPrice = getAveragePrice(art.id);
-                    let price = Math.floor(avgPrice * (0.8 + Math.random() * 0.4));
-                    let usesLeft = art.usesLeft;
-                    // выставляем один экземпляр
-                    if (art.count > 1) art.count--;
-                    else {
-                        let idx = bot.artifacts.findIndex(a => a.id === art.id && a.usesLeft === usesLeft);
-                        if (idx !== -1) bot.artifacts.splice(idx, 1);
-                    }
-                    listArtifactForSale(art.id, usesLeft, price, bot.id, false);
-                    break;
-                }
-            }
-            // Покупка артефактов (если нет такого или с большим количеством зарядов)
-            if (Math.random() < 0.3) {
-                for (let offerIdx = 0; offerIdx < artifactMarket.length; offerIdx++) {
-                    let offer = artifactMarket[offerIdx];
-                    let avgPrice = getAveragePrice(offer.artifactId);
-                    if (offer.price > avgPrice * 1.5) continue; // не переплачиваем
-                    let hasIt = bot.artifacts.some(a => a.id === offer.artifactId);
-                    if (!hasIt || (hasIt && bot.artifacts.find(a => a.id === offer.artifactId).usesLeft < offer.usesLeft)) {
-                        if (buyArtifact(offerIdx, bot, false, bot.name)) {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ======================= ОСНОВНОЙ ЦИКЛ БОТОВ =======================
-    function botAI() {
-        if (!gameActive) return;
-        let now = Date.now();
-        // Рыночные действия ботов (раз в 10 секунд)
-        if (Math.random() < 0.1) botArtifactMarketActions();
-
-        // Док
-        for (let bot of bots) {
-            if (bot.inDock) {
-                if (!bot.dockEnterTime) bot.dockEnterTime = now;
-                if (now - bot.dockEnterTime >= DOCK_STAY_MS) {
-                    bot.inDock = false;
-                    bot.dockEnterTime = 0;
-                    bot.currentPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1;
-                    addLogToGame(`${bot.name} покинул док и оказался на планете #${bot.currentPlanet}.`, "normal", false);
-                }
-                continue;
-            }
-            let shouldDock = (bot.hull < 50 || bot.fuel < 20 || Math.random() < 0.02) && bots.filter(b => b.inDock).length < MAX_DOCK_BOTS;
-            if (shouldDock) {
-                bot.inDock = true;
-                bot.dockEnterTime = now;
-                // продать минералы
-                for (let m of MINERALS) {
-                    let qty = bot.cargo[m.id] || 0;
-                    if (qty > 0) {
-                        let idx = MINERALS.findIndex(m2 => m2.id === m.id);
-                        let multiplier = mineralPriceMultipliers[idx];
-                        let ratingFactor = 1 + (bot.contrabandRating - 50) / 100;
-                        let price = Math.floor(m.basePrice * multiplier * ratingFactor);
-                        if (isNaN(price)) price = m.basePrice;
-                        bot.credits += qty * price;
-                        delete bot.cargo[m.id];
-                        addLogToGame(`${bot.name} продал ${qty} ${m.name} за ${qty * price}💰.`, "success", false);
-                    }
-                }
-                collectAllPlanetResources(false, bot);
-                // взять контрабанду, если есть
-                if (currentContrabandMission && !currentContrabandMission.completed && !bot.contrabandMission && bot.currentPlanet === currentContrabandMission.fromPlanet) {
-                    let ship = getShip(bot.shipLevel);
-                    let currentCargo = Object.values(bot.cargo).reduce((a,b)=>a+b,0);
-                    if (currentCargo + 1 <= ship.cargo) {
-                        bot.cargo["contraband"] = (bot.cargo["contraband"] || 0) + 1;
-                        bot.contrabandMission = { toPlanet: currentContrabandMission.toPlanet, rewardBase: currentContrabandMission.rewardBase, cargoTaken: true };
-                        addLogToGame(`${bot.name} взял контрабандное задание.`, "contraband", false);
-                    }
-                }
-                addLogToGame(`${bot.name} вошёл в док.`, "normal", false);
-                continue;
-            }
-        }
-
-        // Бои между ботами на одной планете
-        let planetsWithBots = new Set();
-        for (let b of bots) if (!b.inDock) planetsWithBots.add(b.currentPlanet);
-        for (let planet of planetsWithBots) {
-            let bpb = bots.filter(b => !b.inDock && b.currentPlanet === planet);
-            if (bpb.length < 2) continue;
-            bpb.sort((a, b) => getTotalPower(b) - getTotalPower(a));
-            let attacker = bpb[0], defender = bpb[1];
-            if (getTotalPower(attacker) > getTotalPower(defender) * (1 + BOT_ATTACK_THRESHOLD)) {
-                resolveCombat(attacker, defender, false);
-            }
-        }
-
-        // Движение и действия
-        for (let bot of bots) {
-            if (bot.inDock) continue;
-            if (now >= bot.nextMoveTime) {
-                botUseArtifacts(bot);
-                botMakeDecision(bot);
-                let dir = 0;
-                if (bot.goal === "trade" && bot.tradeData) {
-                    if (bot.currentPlanet === bot.tradeData.bestBuyPlanet) botPerformTrade(bot, bot.tradeData);
-                    else dir = botMoveTowards(bot, bot.tradeData.bestBuyPlanet);
-                } else if (bot.goal === "buyPlanet" && bot.targetPlanet !== null) {
-                    if (bot.currentPlanet === bot.targetPlanet) {
-                        buyPlanet(bot.targetPlanet, bot, false);
-                        bot.goal = "explore";
-                        bot.targetPlanet = null;
-                    } else dir = botMoveTowards(bot, bot.targetPlanet);
-                } else if (bot.goal === "fight" && bot.targetBot) {
-                    let targetPlanet = bot.targetBot.currentPlanet;
-                    if (bot.currentPlanet === targetPlanet) {
-                        if (bot.targetBot === player) {
-                            encounterWithBots();
-                        } else {
-                            resolveCombat(bot, bot.targetBot, false);
-                        }
-                        bot.goal = "explore";
-                    } else dir = botMoveTowards(bot, targetPlanet);
-                } else if (bot.goal === "mission") {
-                    botHandleMissions(bot);
-                    if (currentMission && !currentMission.completed) {
-                        let target = (bot.missionBought < currentMission.qty) ? currentMission.fromPlanet : currentMission.toPlanet;
-                        dir = botMoveTowards(bot, target);
+                        addLogToGame(`Неудача! Улучшение для ${blueprint.name} не удалось, компоненты потеряны.`, "warning", true);
                     }
                 } else {
-                    let enemyDir = getClosestEnemyPosition(bot);
-                    if (enemyDir !== null) dir = enemyDir;
-                    else dir = Math.random() < 0.5 ? -1 : 1;
+                    addLogToGame(`Создан модуль ${blueprint.name}.`, "success", true);
+                    let existing = player.ownedModules.find(m => m.type === craft.type && !m.isUpgrade);
+                    if (existing) existing.count = (existing.count || 1) + 1;
+                    else player.ownedModules.push({ type: craft.type, isUpgrade: false, count: 1, level: 0 });
                 }
-                if (dir !== 0) {
-                    let newPlanet = bot.currentPlanet + dir;
-                    if (newPlanet < 1) newPlanet = PLANET_COUNT;
-                    if (newPlanet > PLANET_COUNT) newPlanet = 1;
-                    bot.currentPlanet = newPlanet;
-                    if (bot.fuel > 0) bot.fuel--;
-                    if (bot.hasSSGenerator) bot.strangePower += 2;
-                    if (Math.random() < DARK_MATTER_CHANCE) bot.darkMatter += Math.floor(Math.random() * (DARK_MATTER_AMOUNT[1] - DARK_MATTER_AMOUNT[0] + 1) + DARK_MATTER_AMOUNT[0]);
-                    if (bot.hasTMHarvester) bot.darkMatter++;
-                    tryFindGoods(bot, false);
-                    tryFindMineral(bot, false);
-                    tryFindArtifact(bot, false);
-                    botTradeAndUpgrade(bot);
-                    botTryContraband(bot);
-                    let planetIdx = bot.currentPlanet - 1;
-                    if (planetOwners[planetIdx] !== bot.id && canBuyPlanet(planetIdx, bot.level, false) && bot.credits >= getPlanetPrice(planetIdx)) buyPlanet(planetIdx, bot, false);
-                    for (let i = 0; i < PLANET_COUNT; i++) if (planetOwners[i] === bot.id) {
-                        if (!planetModules[i].tmLaboratory && Math.random() < 0.1 && bot.credits >= MODULE_PLANET_TM_LAB_COST) installPlanetModule(i, "tmLaboratory", false, bot);
-                        if (!planetModules[i].planetMiner && Math.random() < 0.1 && bot.credits >= MODULE_PLANET_MINER_COST) installPlanetModule(i, "planetMiner", false, bot);
-                        if (!planetModules[i].teleport && Math.random() < 0.1 && bot.credits >= MODULE_PLANET_TELEPORT_COST) installPlanetModule(i, "teleport", false, bot);
-                        if (planetModules[i].storageLevel < 5 && Math.random() < 0.05 && bot.credits >= getPlanetStorageUpgradeCost(i)) upgradePlanetStorage(i, false, bot);
-                    }
-                    if (Math.random() < 0.5) collectAllPlanetResources(false, bot);
-                    if (bot.stealthRemaining > 0) bot.stealthRemaining--;
-                    if (bot.luckBoostRemaining > 0) bot.luckBoostRemaining--;
-                    if (bot.battleBuffRemaining > 0) bot.battleBuffRemaining--;
-                    let newLevel = Math.floor(bot.wins / 7) + 1;
-                    if (newLevel > bot.level) bot.level = newLevel;
-                }
-                bot.nextMoveTime = now + BOT_MOVE_DELAY;
+                player.craftingQueue.splice(i, 1);
+                i--;
+                saveGame();
             }
         }
-        saveGame();
     }
 
-    // ======================= ОСТАЛЬНЫЕ МЕХАНИКИ =======================
+    function installModule(moduleType, isUpgrade = false) {
+        let blueprint = MODULE_BLUEPRINTS[moduleType];
+        if (!blueprint) return false;
+        let owned = player.ownedModules.find(m => m.type === moduleType && m.isUpgrade === isUpgrade);
+        if (!owned || (isUpgrade && owned.level === 0) || (!isUpgrade && (!owned.count || owned.count < 1))) {
+            addLogToGame(`У вас нет такого модуля/улучшения.`, "warning", true);
+            return false;
+        }
+        if (player.credits < blueprint.installCost) { addLogToGame(`Не хватает ${blueprint.installCost}💰 на установку.`, "warning", true); return false; }
+        player.credits -= blueprint.installCost;
+        if (isUpgrade) {
+            if (moduleType === "harvester") player.tmHarvesterLevel = owned.level;
+            else if (moduleType === "generator") player.ssGeneratorLevel = owned.level;
+            else if (moduleType === "optimizer") player.optimizerLevel = owned.level;
+            addLogToGame(`Установлено улучшение ${blueprint.name} уровня ${owned.level}.`, "success", true);
+        } else {
+            if (moduleType === "harvester") player.hasTMHarvester = true;
+            else if (moduleType === "generator") player.hasSSGenerator = true;
+            else if (moduleType === "optimizer") player.hasOptimizer = true;
+            addLogToGame(`Установлен модуль ${blueprint.name}.`, "success", true);
+            owned.count--;
+            if (owned.count === 0) player.ownedModules = player.ownedModules.filter(m => !(m.type === moduleType && !m.isUpgrade));
+        }
+        saveGame();
+        updateUI();
+        return true;
+    }
+
+    function uninstallModule(moduleType) {
+        let blueprint = MODULE_BLUEPRINTS[moduleType];
+        if (!blueprint) return false;
+        if (player.credits < blueprint.installCost) { addLogToGame(`Не хватает ${blueprint.installCost}💰 на снятие.`, "warning", true); return false; }
+        player.credits -= blueprint.installCost;
+        if (moduleType === "harvester") {
+            if (!player.hasTMHarvester) return false;
+            player.hasTMHarvester = false;
+            let level = player.tmHarvesterLevel;
+            player.tmHarvesterLevel = 0;
+            if (level > 0) {
+                let existing = player.ownedModules.find(m => m.type === "harvester" && m.isUpgrade);
+                if (existing) existing.level = level;
+                else player.ownedModules.push({ type: "harvester", isUpgrade: true, level });
+            }
+            let baseMod = player.ownedModules.find(m => m.type === "harvester" && !m.isUpgrade);
+            if (baseMod) baseMod.count++;
+            else player.ownedModules.push({ type: "harvester", isUpgrade: false, count: 1, level: 0 });
+        } else if (moduleType === "generator") {
+            if (!player.hasSSGenerator) return false;
+            player.hasSSGenerator = false;
+            let level = player.ssGeneratorLevel;
+            player.ssGeneratorLevel = 0;
+            if (level > 0) {
+                let existing = player.ownedModules.find(m => m.type === "generator" && m.isUpgrade);
+                if (existing) existing.level = level;
+                else player.ownedModules.push({ type: "generator", isUpgrade: true, level });
+            }
+            let baseMod = player.ownedModules.find(m => m.type === "generator" && !m.isUpgrade);
+            if (baseMod) baseMod.count++;
+            else player.ownedModules.push({ type: "generator", isUpgrade: false, count: 1, level: 0 });
+        } else if (moduleType === "optimizer") {
+            if (!player.hasOptimizer) return false;
+            player.hasOptimizer = false;
+            let level = player.optimizerLevel;
+            player.optimizerLevel = 0;
+            if (level > 0) {
+                let existing = player.ownedModules.find(m => m.type === "optimizer" && m.isUpgrade);
+                if (existing) existing.level = level;
+                else player.ownedModules.push({ type: "optimizer", isUpgrade: true, level });
+            }
+            let baseMod = player.ownedModules.find(m => m.type === "optimizer" && !m.isUpgrade);
+            if (baseMod) baseMod.count++;
+            else player.ownedModules.push({ type: "optimizer", isUpgrade: false, count: 1, level: 0 });
+        }
+        addLogToGame(`Модуль ${blueprint.name} снят.`, "success", true);
+        saveGame();
+        updateUI();
+        return true;
+    }
+
+    function getTMHarvestBonus() { return (player.hasTMHarvester ? (1 + (player.tmHarvesterLevel || 0)) : 0); }
+    function getSSGeneratorBonus() { return (player.hasSSGenerator ? (2 + (player.ssGeneratorLevel || 0) * 2) : 0); }
+    function getOptimizerBonus() { return (player.hasOptimizer ? (25 - (player.optimizerLevel || 0) * 5) : HYPER_COST); }
+
+    // ======================= НОВЫЕ АРТЕФАКТЫ =======================
+    function useNavigationCrystal() {
+        let planet = prompt("Введите номер планеты (1-1000):", player.currentPlanet);
+        let newPlanet = parseInt(planet);
+        if (isNaN(newPlanet) || newPlanet < 1 || newPlanet > PLANET_COUNT) { addLogToGame("Неверный номер планеты.", "warning", true); return false; }
+        player.currentPlanet = newPlanet;
+        addLogToGame(`Навигационный Кристалл активирован! Вы телепортированы на планету #${player.currentPlanet}.`, "artifact", true);
+        updateUI();
+        return true;
+    }
+    function useContrabandNetwork() {
+        if (player.contrabandMission && player.contrabandMission.cargoTaken) {
+            addLogToGame("Контрабандная сеть активирована! Патруль вас не заметит.", "artifact", true);
+            return true;
+        }
+        addLogToGame("Контрабандную сеть можно использовать только когда у вас есть контрабанда.", "warning", true);
+        return false;
+    }
+    function useScanner() {
+        let msg = "🔭 Сканер активирован:\n";
+        msg += `⭐ ВЫ: планета #${player.currentPlanet}, уровень ${player.level}, сила ${getTotalPower(player).toFixed(2)}\n`;
+        for (let b of bots) {
+            msg += `${b.name}: планета #${b.currentPlanet}, уровень ${b.level}, сила ${getTotalPower(b).toFixed(2)}\n`;
+        }
+        alert(msg);
+        addLogToGame("Сканер показал расположение всех кораблей.", "artifact", true);
+        return true;
+    }
+    function useEmergencyAccelerator() {
+        let ship = getShip(player.shipLevel);
+        player.fuel = ship.fuelCap;
+        player.strangePower += 20;
+        addLogToGame("Модуль экстренного ускорения активирован! Топливо восстановлено, +20 Силы Странника.", "artifact", true);
+        updateUI();
+        return true;
+    }
+
+    function activateArtifact(artifactId) {
+        let artifact = playerArtifacts.find(a => a.id === artifactId);
+        if (!artifact) return false;
+        if (artifactId === "luckMatrix") {
+            if (player.luckBoostRemaining > 0) { addLogToGame("Эффект удачи уже активен!", "warning", true); return false; }
+            useArtifact(playerArtifacts, "luckMatrix");
+            player.luckBoostRemaining = 10;
+            addLogToGame(`✨ Активирована Матрица удачи! На следующие 10 ходов находки будут удвоены.`, "artifact", true);
+            updateUI(); saveGame(); return true;
+        } else if (artifactId === "rareCrystal") {
+            useArtifact(playerArtifacts, "rareCrystal");
+            player.credits += 10000;
+            addLogToGame(`✨ Вы обменяли редкий кристалл на 10000💰!`, "success", true);
+            updateUI(); saveGame(); return true;
+        } else if (artifactId === "energyResonator") {
+            if (player.battleBuffRemaining > 0) { addLogToGame("Энергетический резонатор уже активен!", "warning", true); return false; }
+            useArtifact(playerArtifacts, "energyResonator");
+            player.battleBuffRemaining = 3;
+            addLogToGame(`✨ Активирован Энергетический резонатор! Сила удвоена на 3 боя.`, "artifact", true);
+            updateUI(); saveGame(); return true;
+        } else if (artifactId === "navigationCrystal") {
+            if (useNavigationCrystal()) { useArtifact(playerArtifacts, "navigationCrystal"); updateUI(); saveGame(); return true; }
+        } else if (artifactId === "contrabandNetwork") {
+            if (useContrabandNetwork()) { useArtifact(playerArtifacts, "contrabandNetwork"); updateUI(); saveGame(); return true; }
+        } else if (artifactId === "scanner") {
+            if (useScanner()) { useArtifact(playerArtifacts, "scanner"); updateUI(); saveGame(); return true; }
+        } else if (artifactId === "emergencyAccelerator") {
+            if (useEmergencyAccelerator()) { useArtifact(playerArtifacts, "emergencyAccelerator"); updateUI(); saveGame(); return true; }
+        }
+        return false;
+    }
+
+    function autoActivateArtifacts(entity, isPlayer) {
+        if (isPlayer) {
+            if (Math.abs(player.level - (entity === player ? 0 : entity.level)) > 1 && hasArtifact(playerArtifacts, "amuletSupremacy")) {
+                if (useArtifact(playerArtifacts, "amuletSupremacy")) {
+                    player.ignoreLevelOnce = true;
+                    addLogToGame(`✨ Амулет превосходства автоматически активирован! Следующий бой без ограничения уровней.`, "artifact", true);
+                    return true;
+                }
+            }
+            if (hasArtifact(playerArtifacts, "tempMask")) {
+                let playerPower = getTotalPower(player);
+                let botPower = getTotalPower(entity);
+                if (botPower > playerPower * (1 + BOT_ATTACK_THRESHOLD) && entity.hull > 50) {
+                    if (useArtifact(playerArtifacts, "tempMask")) {
+                        player.stealthRemaining = 10;
+                        addLogToGame(`✨ Временная маскировка автоматически активирована! Боты не атакуют 10 ходов.`, "artifact", true);
+                        return true;
+                    }
+                }
+            }
+        } else {
+            if (Math.abs(player.level - entity.level) > 1 && hasArtifact(entity.artifacts, "amuletSupremacy")) {
+                if (useArtifact(entity.artifacts, "amuletSupremacy")) {
+                    entity.ignoreLevelOnce = true;
+                    addLogToGame(`✨ ${entity.name} активировал Амулет превосходства! Следующий бой без ограничения уровней.`, "artifact", false);
+                    return true;
+                }
+            }
+            if (hasArtifact(entity.artifacts, "tempMask")) {
+                let playerPower = getTotalPower(player);
+                let botPower = getTotalPower(entity);
+                if (botPower > playerPower * (1 + BOT_ATTACK_THRESHOLD) && entity.hull > 50) {
+                    if (useArtifact(entity.artifacts, "tempMask")) {
+                        entity.stealthRemaining = 10;
+                        addLogToGame(`✨ ${entity.name} активировал Временную маскировку! Игрок не будет атакован 10 ходов.`, "artifact", false);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+
+    // ======================= ОСНОВНЫЕ ИГРОВЫЕ МЕХАНИКИ =======================
     function canBuyPlanet(idx, buyerLevel, isPlayer) {
         let owner = planetOwners[idx];
         if (owner === null) return true;
@@ -1190,17 +837,7 @@
         }
     }
 
-    function getClosestEnemyPosition(bot) {
-        let enemies = [];
-        for (let other of bots) if (other.id !== bot.id && !other.inDock && Math.abs(bot.level - other.level) <= 1) enemies.push(other.currentPlanet);
-        if (!player.isDead && !player.inDock && Date.now() > player.immunityUntil && Math.abs(bot.level - player.level) <= 1) enemies.push(player.currentPlanet);
-        if (enemies.length === 0) return null;
-        let best = enemies[0], bestDist = Math.abs(bot.currentPlanet - best);
-        for (let e of enemies) { let d = Math.abs(bot.currentPlanet - e); if (d < bestDist) { bestDist = d; best = e; } }
-        if (best === bot.currentPlanet) return null;
-        return best > bot.currentPlanet ? 1 : -1;
-    }
-
+    // Боевая система
     function resolveCombat(attacker, defender, isPlayerAttacker, eventFight = false) {
         let powerA = getTotalPower(attacker), powerD = getTotalPower(defender);
         if (powerA < powerD) {
@@ -1264,7 +901,6 @@
                     }
                 }
             }
-            // передача средств с рынка при гибели игрока
             if (attacker === player && defender !== player) {
                 if (defender.artifactSalesBalance > 0) {
                     player.credits += defender.artifactSalesBalance;
@@ -1292,8 +928,8 @@
                     planetModules[i] = { tmLaboratory: false, storageLevel: 0, planetMiner: false, teleport: false };
                     planetIncome[i] = 0; planetTM[i] = 0; planetMinerIncome[i] = 0;
                 }
-                // удалить артефакты погибшего бота с рынка
                 artifactMarket = artifactMarket.filter(o => o.sellerId !== attacker.id);
+                componentMarket = componentMarket.filter(o => o.sellerId !== attacker.id);
             }
             return true;
         }
@@ -1319,7 +955,6 @@
                 }
             }
         }
-        // передача средств с рынка при гибели игрока (если он проиграл, уже обработано выше)
         if (defender === player && attacker !== player && player.artifactSalesBalance > 0) {
             attacker.credits += player.artifactSalesBalance;
             addLogToGame(`${attacker.name} получил ${player.artifactSalesBalance}💰 со счёта продаж артефактов побеждённого игрока.`, "success", false);
@@ -1346,6 +981,7 @@
                 planetIncome[i] = 0; planetTM[i] = 0; planetMinerIncome[i] = 0;
             }
             artifactMarket = artifactMarket.filter(o => o.sellerId !== defender.id);
+            componentMarket = componentMarket.filter(o => o.sellerId !== defender.id);
         }
         return true;
     }
@@ -1371,10 +1007,10 @@
             planetIncome[i] = 0; planetTM[i] = 0; planetMinerIncome[i] = 0;
             planetPrevOwnersCount[i] = 0;
         }
-        // Артефакты игрока остаются на рынке, но деньги на счёте не пропадают (они уже перешли победителю в бою)
         player.isDead = true; player.inDock = false; player.dockEnterTime = 0;
         playerArtifacts = [];
         player.hasTMHarvester = false; player.hasSSGenerator = false; player.hasOptimizer = false;
+        player.tmHarvesterLevel = 0; player.ssGeneratorLevel = 0; player.optimizerLevel = 0;
         player.stealthRemaining = 0; player.luckBoostRemaining = 0; player.battleBuffRemaining = 0; player.ignoreLevelOnce = false;
         player.contrabandMission = null;
         saveGame();
@@ -1424,8 +1060,10 @@
         document.getElementById("currentPlanetName").innerHTML = `Планета #${player.currentPlanet}`;
         player.fuel--;
         player.strangePower++;
-        if (player.hasSSGenerator) { player.strangePower += 2; addLogToGame(`Генератор СС: +2 СС`, "success", true); }
-        if (player.hasTMHarvester) { player.darkMatter++; addLogToGame(`Модуль добычи: +1 ТМ`, "success", true); }
+        let ssBonus = getSSGeneratorBonus();
+        if (ssBonus > 0) { player.strangePower += ssBonus; addLogToGame(`Генератор СС: +${ssBonus} СС`, "success", true); }
+        let tmBonus = getTMHarvestBonus();
+        if (tmBonus > 0) { player.darkMatter += tmBonus; addLogToGame(`Модуль добычи: +${tmBonus} ТМ`, "success", true); }
         let darkChance = DARK_MATTER_CHANCE;
         if (player.luckBoostRemaining > 0) darkChance *= 1.5;
         if (Math.random() < darkChance) {
@@ -1447,7 +1085,7 @@
     }
     function hyperJump(direction) {
         if (player.isDead) { addLogToGame("Ваш корабль уничтожен.", "warning", true); return; }
-        let cost = player.hasOptimizer ? 25 : HYPER_COST;
+        let cost = getOptimizerBonus();
         if (player.strangePower < cost) { addLogToGame(`Недостаточно Силы Странника (нужно ${cost})`, "warning", true); return; }
         let current = player.currentPlanet, available = [];
         if (direction === -1) for (let i = 1; i < current; i++) available.push(i);
@@ -1485,7 +1123,7 @@
     function tryFindArtifact(entity, isPlayer) {
         if (!isPlayer && !gameActive) return false;
         if (Math.random() > ARTIFACT_FIND_CHANCE) return false;
-        let artList = [{ id: "energyResonator", uses: 3 }, { id: "amuletSupremacy", uses: 1 }, { id: "tempMask", uses: 10 }, { id: "rareCrystal", uses: 1 }, { id: "luckMatrix", uses: 10 }];
+        let artList = [{ id: "energyResonator", uses: 3 }, { id: "amuletSupremacy", uses: 1 }, { id: "tempMask", uses: 10 }, { id: "rareCrystal", uses: 1 }, { id: "luckMatrix", uses: 10 }, { id: "navigationCrystal", uses: 3 }, { id: "contrabandNetwork", uses: 1 }, { id: "scanner", uses: 1 }, { id: "emergencyAccelerator", uses: 3 }];
         let art = artList[Math.floor(Math.random() * artList.length)];
         if (isPlayer) {
             addArtifact(playerArtifacts, art.id, art.uses);
@@ -1651,12 +1289,150 @@
         return false;
     }
 
-    function updateContrabandMission() {
-        let now = Date.now();
-        if (now - lastContrabandUpdate >= CONTRABAND_MISSION_COOLDOWN) {
-            lastContrabandUpdate = now;
-            generateContrabandOffers();
+    function generateContrabandOffers() {
+        let offers = [];
+        for (let level = 1; level <= 3; level++) {
+            let rewardType = Math.random() < 0.5 ? "credits" : "tm";
+            let rewardBase;
+            if (rewardType === "credits") {
+                if (level === 1) rewardBase = Math.floor(Math.random() * 3001) + 5000;
+                else if (level === 2) rewardBase = Math.floor(Math.random() * 4001) + 8000;
+                else rewardBase = Math.floor(Math.random() * 6001) + 12000;
+            } else {
+                if (level === 1) rewardBase = Math.floor(Math.random() * 101) + 100;
+                else if (level === 2) rewardBase = Math.floor(Math.random() * 151) + 200;
+                else rewardBase = Math.floor(Math.random() * 151) + 350;
+            }
+            let fromPlanet, toPlanet;
+            do { fromPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; toPlanet = Math.floor(Math.random() * PLANET_COUNT) + 1; } while (fromPlanet === toPlanet);
+            offers.push({ level, fromPlanet, toPlanet, rewardType, rewardBase, completed: false });
         }
+        activeContrabandOffers = offers;
+        saveGame();
+    }
+
+    function takeContrabandOffer(offerIndex) {
+        let offer = activeContrabandOffers[offerIndex];
+        if (!offer || offer.completed) return false;
+        if (player.contrabandMission) { addLogToGame("У вас уже есть активное контрабандное задание.", "warning", true); return false; }
+        player.contrabandMission = {
+            fromPlanet: offer.fromPlanet,
+            toPlanet: offer.toPlanet,
+            rewardBase: offer.rewardBase,
+            rewardType: offer.rewardType,
+            level: offer.level,
+            cargoTaken: false
+        };
+        addLogToGame(`Вы взяли контрабандное задание (уровень ${offer.level}). Нужно забрать груз на планете #${offer.fromPlanet} и доставить на #${offer.toPlanet}.`, "contraband", true);
+        offer.completed = true;
+        saveGame();
+        return true;
+    }
+
+    function takeContrabandCargo() {
+        if (!player.contrabandMission) return false;
+        if (player.contrabandMission.cargoTaken) { addLogToGame("Вы уже взяли груз.", "warning", true); return false; }
+        if (player.currentPlanet !== player.contrabandMission.fromPlanet) { addLogToGame("Вы должны быть на планете отправления, чтобы забрать груз.", "warning", true); return false; }
+        let ship = getShip(player.shipLevel);
+        let currentCargo = Object.values(player.cargo).reduce((a, b) => a + b, 0);
+        if (currentCargo + 1 > ship.cargo) { addLogToGame("Недостаточно места в трюме.", "warning", true); return false; }
+        player.cargo["contraband"] = (player.cargo["contraband"] || 0) + 1;
+        player.contrabandMission.cargoTaken = true;
+        addLogToGame(`Вы взяли контрабанду на планете #${player.currentPlanet}. Доставьте на #${player.contrabandMission.toPlanet}.`, "contraband", true);
+        saveGame();
+        return true;
+    }
+
+    function deliverContraband() {
+        if (!player.contrabandMission) return false;
+        if (!player.contrabandMission.cargoTaken) { addLogToGame("Вы ещё не забрали груз на планете отправления.", "warning", true); return false; }
+        if (player.currentPlanet !== player.contrabandMission.toPlanet) return false;
+        let contrabandQty = player.cargo["contraband"] || 0;
+        if (contrabandQty === 0) { addLogToGame("У вас нет контрабанды!", "warning", true); return false; }
+        player.cargo["contraband"]--;
+        if (player.cargo["contraband"] === 0) delete player.cargo["contraband"];
+        let success = Math.random() < (1 - CONTRABAND_ENCOUNTER_CHANCE);
+        let ratingChange = 0;
+        let reward = 0;
+        if (success) {
+            ratingChange = player.contrabandMission.level;
+            reward = player.contrabandMission.rewardBase * (1 + (player.contrabandRating - 50) / 100);
+            if (player.contrabandMission.rewardType === "credits") player.credits += Math.floor(reward);
+            else player.darkMatter += Math.floor(reward);
+            player.contrabandRating = Math.min(100, player.contrabandRating + ratingChange);
+            addLogToGame(`🎉 Контрабанда доставлена! Получено ${Math.floor(reward)}${player.contrabandMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}. Рейтинг +${ratingChange} (текущий ${player.contrabandRating}).`, "contraband", true);
+        } else {
+            ratingChange = -player.contrabandMission.level;
+            player.credits = Math.max(0, player.credits - 1000);
+            player.contrabandRating = Math.max(0, player.contrabandRating + ratingChange);
+            addLogToGame(`❌ Контрабанда провалена! Потеряно 1000💰. Рейтинг ${ratingChange} (текущий ${player.contrabandRating}).`, "contraband", true);
+        }
+        player.contrabandMission = null;
+        generateContrabandOffers();
+        saveGame();
+        return true;
+    }
+
+    async function patrolEncounterWithChoice() {
+        return new Promise((resolve) => {
+            let modal = document.createElement("div"); modal.className = "modal";
+            modal.innerHTML = `<div class="modal-content"><h3>🚨 ПАТРУЛЬ ОСТАНОВИЛ ВАС!</h3><p>Ваш корабль с контрабандой остановлен. Что будете делать?</p><div class="modal-buttons"><button id="bribeBtn">💵 Дать взятку (500💰, 50% успеха)</button><button id="docsBtn">📄 Показать поддельные документы (250💰, 80% успеха)</button><button id="runBtn">🏃‍♂️ Убежать (кинуть кубик)</button></div></div>`;
+            document.body.appendChild(modal);
+            modal.querySelector("#bribeBtn").onclick = () => {
+                modal.remove();
+                if (player.credits < 500) { addLogToGame("Не хватает кредитов для взятки!", "warning", true); resolve(false); return; }
+                player.credits -= 500;
+                if (Math.random() < 0.5) { addLogToGame("Патруль взял взятку и отпустил вас. Контрабанда сохранена.", "success", true); resolve(true); }
+                else { addLogToGame("Патруль взял взятку, но всё равно конфисковал груз! Задание провалено.", "combat", true); resolve(false); }
+            };
+            modal.querySelector("#docsBtn").onclick = () => {
+                modal.remove();
+                if (player.credits < 250) { addLogToGame("Не хватает кредитов для покупки фальшивых документов!", "warning", true); resolve(false); return; }
+                player.credits -= 250;
+                if (Math.random() < 0.8) { addLogToGame("Поддельные документы сработали! Патруль пропустил вас.", "success", true); resolve(true); }
+                else { addLogToGame("Поддельные документы не помогли. Груз конфискован!", "combat", true); resolve(false); }
+            };
+            modal.querySelector("#runBtn").onclick = () => {
+                modal.remove();
+                let diceModal = document.createElement("div"); diceModal.className = "modal";
+                diceModal.innerHTML = `<div class="modal-content dice-modal"><h3>🏃‍♂️ ПОПЫТКА УБЕЖАТЬ</h3><p>Нажмите кнопку, чтобы бросить кубик:</p><button id="rollDiceBtn">🎲 БРОСИТЬ КУБИК</button><div id="diceResult" class="dice-result"></div><div id="diceMessage"></div></div>`;
+                document.body.appendChild(diceModal);
+                let rollBtn = diceModal.querySelector("#rollDiceBtn");
+                let resultDiv = diceModal.querySelector("#diceResult");
+                let msgDiv = diceModal.querySelector("#diceMessage");
+                rollBtn.onclick = () => {
+                    let patrolRoll = Math.floor(Math.random() * 6) + 1;
+                    let playerRoll = Math.floor(Math.random() * 6) + 1;
+                    resultDiv.innerHTML = `Патруль выбросил: ${patrolRoll}<br>Вы выбросили: ${playerRoll}`;
+                    if (playerRoll >= patrolRoll) {
+                        msgDiv.innerHTML = "✅ Вы ушли от погони! Контрабанда сохранена.";
+                        let closeBtn = document.createElement("button"); closeBtn.innerText = "Продолжить";
+                        closeBtn.onclick = () => { diceModal.remove(); resolve(true); };
+                        diceModal.querySelector(".modal-content").appendChild(closeBtn);
+                    } else {
+                        msgDiv.innerHTML = "❌ Патруль догнал вас! Груз конфискован.";
+                        let closeBtn = document.createElement("button"); closeBtn.innerText = "Продолжить";
+                        closeBtn.onclick = () => { diceModal.remove(); resolve(false); };
+                        diceModal.querySelector(".modal-content").appendChild(closeBtn);
+                    }
+                    rollBtn.disabled = true;
+                };
+            };
+        });
+    }
+    async function patrolEncounter(isPlayer) {
+        if (!isPlayer) return false;
+        if (!player.contrabandMission || !player.contrabandMission.cargoTaken) return false;
+        if (Math.random() > CONTRABAND_ENCOUNTER_CHANCE) return false;
+        let success = await patrolEncounterWithChoice();
+        if (success) return false;
+        player.cargo["contraband"] = (player.cargo["contraband"] || 0) - 1;
+        if (player.cargo["contraband"] <= 0) delete player.cargo["contraband"];
+        player.credits = Math.max(0, player.credits - 1000);
+        player.contrabandRating = Math.max(0, player.contrabandRating - 1);
+        player.contrabandMission = null;
+        saveGame();
+        return true;
     }
 
     function sellMinerals() {
@@ -1862,6 +1638,7 @@
                         player.shipLevel = ship.level;
                         player.fuel = Math.min(ship.fuelCap, Math.floor(ship.fuelCap * fuelPercent));
                         player.hasTMHarvester = false; player.hasSSGenerator = false; player.hasOptimizer = false;
+                        player.tmHarvesterLevel = 0; player.ssGeneratorLevel = 0; player.optimizerLevel = 0;
                         addLogToGame(`Вы купили корабль ${ship.name}!`, "success", true);
                         updateUI(); saveGame(); renderShopTab("ships");
                     } else alert("Недостаточно средств, уровня или ТМ.");
@@ -1942,6 +1719,12 @@
             if (qty > 0) cargoHtml += `<div class="cargo-item">${g.name}: ${qty}</div>`;
         }
         document.getElementById("cargoDisplay").innerHTML = cargoHtml || '<div class="cargo-item">Пусто</div>';
+        let componentsHtml = '';
+        for (let c of COMPONENTS) {
+            let qty = player.components[c.id] || 0;
+            if (qty > 0) componentsHtml += `<div class="component-item">${c.name}: ${qty}</div>`;
+        }
+        document.getElementById("componentsDisplay").innerHTML = componentsHtml || '<div class="component-item">Нет компонентов</div>';
         let artifactHtml = '';
         for (let a of playerArtifacts) {
             let art = ARTIFACTS[a.id];
@@ -1956,6 +1739,9 @@
         if (player.stealthRemaining > 0) effectsHtml += `<div class="stat">🛡️ Маскировка: ${player.stealthRemaining} ходов</div>`;
         if (player.luckBoostRemaining > 0) effectsHtml += `<div class="stat">🍀 Удача: ${player.luckBoostRemaining} ходов</div>`;
         if (player.ignoreLevelOnce) effectsHtml += `<div class="stat">🏅 Превосходство: 1 бой</div>`;
+        if (player.hasTMHarvester) effectsHtml += `<div class="stat">⛏️ Добытчик ТМ (уровень ${player.tmHarvesterLevel})</div>`;
+        if (player.hasSSGenerator) effectsHtml += `<div class="stat">⚡ Генератор СС (уровень ${player.ssGeneratorLevel})</div>`;
+        if (player.hasOptimizer) effectsHtml += `<div class="stat">🚀 Оптимизатор (уровень ${player.optimizerLevel})</div>`;
         document.getElementById("activeEffects").innerHTML = effectsHtml || '';
         let missionText = "Нет активного задания";
         if (currentMission && !currentMission.completed) missionText = `📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought || 0}/${currentMission.qty}, продано ${currentMission.sold || 0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
@@ -1975,17 +1761,17 @@
         for (let [id, art] of Object.entries(ARTIFACTS)) html += `<tr><td>${art.name}</td><td>${art.desc}</td><td>${art.uses}</td></tr>`;
         html += `</table><p>Артефакты можно найти при перелётах (шанс 0.5%). Активация: <b>по клику</b> (кроме "Амулет превосходства" и "Временная маскировка" – они срабатывают автоматически).</p></div>
         <div class="info-section"><h3>🔧 МОДУЛИ КОРАБЛЯ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Цена (💰)</th></tr>
-        <tr><td>Добытчик ТМ</td><td>+1 ТМ за перелёт</td><td>${MODULE_HARVESTER_COST}</td></tr>
-        <tr><td>Генератор СС</td><td>+2 СС за перелёт</td><td>${MODULE_SS_GENERATOR_COST}</td></tr>
-        <tr><td>Оптимизатор полёта</td><td>Гиперпрыжок 25 СС, вход в док 50 СС</td><td>${MODULE_OPTIMIZER_COST}</td></tr>
-        </table></div>
+        <tr><td>Добытчик ТМ</td><td>+1 ТМ за перелёт (улучшение +1 за уровень)</td><td>${MODULE_HARVESTER_COST}</td></tr>
+        <tr><td>Генератор СС</td><td>+2 СС за перелёт (улучшение +2 за уровень)</td><td>${MODULE_SS_GENERATOR_COST}</td></tr>
+        <tr><td>Оптимизатор полёта</td><td>Гиперпрыжок 25 СС, вход в док 50 СС (улучшение -5 СС за уровень)</td><td>${MODULE_OPTIMIZER_COST}</td></tr>
+        </table><p>Модули и улучшения создаются у механика в доке из компонентов. Установка/снятие стоит 5000💰.</p></div>
         <div class="info-section"><h3>🏭 МОДУЛИ ПЛАНЕТ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Цена (💰)</th></tr>
         <tr><td>Лаборатория ТМ</td><td>Генерация ТМ 10 ед/мин</td><td>${MODULE_PLANET_TM_LAB_COST}</td></tr>
         <tr><td>Добытчик ресурсов</td><td>Генерирует 5–20 кредитов каждые 10 мин</td><td>${MODULE_PLANET_MINER_COST}</td></tr>
         <tr><td>Телепорт</td><td>Позволяет телепортироваться на планету из дока</td><td>${MODULE_PLANET_TELEPORT_COST}</td></tr>
         <tr><td>Складские ангары (улучшение)</td><td>Увеличивает вместимость склада на 1000 ед. (до 6000) и даёт +5% к доходу с продаж за каждый уровень</td><td>уровень 1:5000, далее +5000</td></tr>
         </table></div>
-        <div class="info-section"><h3>📜 ОСОБЕННОСТИ ИГРЫ</h3><p>• При гибели игрока весь прогресс сбрасывается.<br>• Боты могут покупать планеты, устанавливать модули, улучшать склады.<br>• Задания двухэтапные: купить товар на одной планете, продать на другой.<br>• Каждые 30 минут цены обновляются, запасы пополняются на 50–150 ед., но не выше максимальной вместимости склада.<br>• Продажа товаров не ограничена складом – можно продать любое количество.<br>• Максимум ботов — 200, новые появляются каждые 5 минут, пока ботов 1-го уровня менее 50. В доке одновременно может быть не более 3 ботов (5 минут).<br>• При перелёте можно найти товары (10% шанс, 1–3 ед.), артефакты (0.5% шанс), минералы (5% шанс в зонах 1-100 и 901-1000).<br>• Контрабанда: каждые 15 минут генерируется три задания с разным уровнем сложности. Рейтинг влияет на награду. При перелёте с контрабандой 5% шанс встретить патруль.<br>• В доке можно находиться 24 часа, после чего игрок выбрасывается в случайное место.<br>• Боты двигаются целенаправленно к ближайшему противнику (1 сек).<br>• При встрече с ботом можно откупиться за 1000💰.<br>• За каждые 10 выполненных легальных заданий даётся 10000💰, за каждые 100 — 1000🌑 ТМ.</p></div>
+        <div class="info-section"><h3>📜 ОСОБЕННОСТИ ИГРЫ</h3><p>• При гибели игрока весь прогресс сбрасывается.<br>• Боты могут покупать планеты, устанавливать модули, улучшать склады.<br>• Задания двухэтапные: купить товар на одной планете, продать на другой.<br>• Каждые 30 минут цены обновляются, запасы пополняются на 50–150 ед., но не выше максимальной вместимости склада.<br>• Продажа товаров не ограничена складом – можно продать любое количество.<br>• Максимум ботов — 200, новые появляются каждые 5 минут, пока ботов 1-го уровня менее 50. В доке одновременно может быть не более 3 ботов (5 минут).<br>• При перелёте можно найти товары (10% шанс, 1–3 ед.), артефакты (0.5% шанс), минералы (5% шанс в зонах 1-100 и 901-1000), компоненты (редко).<br>• Контрабанда: каждые 15 минут генерируется три задания с разным уровнем сложности. Рейтинг влияет на награду. При перелёте с контрабандой 5% шанс встретить патруль.<br>• В доке можно находиться 24 часа, после чего игрок выбрасывается в случайное место.<br>• Боты двигаются целенаправленно к ближайшему противнику (1 сек).<br>• При встрече с ботом можно откупиться за 1000💰.<br>• За каждые 10 выполненных легальных заданий даётся 10000💰, за каждые 100 — 1000🌑 ТМ.</p></div>
         <div class="modal-buttons"><button id="closeInfoBtn">Закрыть</button></div></div></div>`;
         modal.innerHTML = html;
         document.body.appendChild(modal);
@@ -1993,7 +1779,7 @@
     }
 
     function openDock(restore = false) {
-        let dockCost = player.hasOptimizer ? 50 : DOCK_COST;
+        let dockCost = getOptimizerBonus();
         if (!restore && player.strangePower < dockCost) { addLogToGame(`Недостаточно Силы Странника для входа в док (нужно ${dockCost})`, "warning", true); return; }
         if (!restore) { player.strangePower -= dockCost; saveGame(); }
         player.inDock = true; player.dockEnterTime = Date.now();
@@ -2009,6 +1795,8 @@
             <button id="dockMissionBtn">📜 ЗАДАНИЕ</button>
             <button id="dockContrabandBtn">🎲 КОНТРАБАНДИСТ</button>
             <button id="dockArtifactMarketBtn">🏺 РЫНОК АРТЕФАКТОВ</button>
+            <button id="dockComponentMarketBtn">⚙️ ЧЁРНЫЙ РЫНОК (компоненты)</button>
+            <button id="dockCraftBtn">🔧 МЕХАНИК (крафт)</button>
             <button id="dockMenuBtn">🏠 ГЛАВНОЕ МЕНЮ</button>
             <button id="closeDockBtn" style="background:#8b0000;">ВЫЙТИ ИЗ ДОКА</button>
         </div><div id="dockContent" class="dock-section"><p>Добро пожаловать в док. Выберите действие из меню.</p></div><div class="dock-log"></div><div class="modal-buttons"></div></div></div>`;
@@ -2027,6 +1815,7 @@
         updateDockTimer();
         function upd() { let main = document.getElementById("logBox"); if (main && modal.querySelector(".dock-log")) { modal.querySelector(".dock-log").innerHTML = main.innerHTML; modal.querySelector(".dock-log").scrollTop = modal.querySelector(".dock-log").scrollHeight; } }
         upd();
+
         function showMyPlanetsModal() {
             let owned = []; for (let i = 0; i < PLANET_COUNT; i++) if (planetOwners[i] === "player") owned.push(i);
             if (owned.length === 0) { alert("У вас нет планет."); return; }
@@ -2089,7 +1878,8 @@
             let ship = getShip(player.shipLevel);
             let mineralsList = MINERALS.filter(m => player.cargo[m.id]).map(m => `${m.name}: ${player.cargo[m.id]}`).join(", ") || "нет";
             let artifactsList = playerArtifacts.map(a => `${ARTIFACTS[a.id].name} x${a.count}`).join(", ") || "нет";
-            let html = `<div class="balance-panel"><h4>📊 Баланс пилота</h4><div class="balance-item">💰 Кредиты: ${Math.floor(player.credits)}</div><div class="balance-item">🌀 СС: ${player.strangePower}</div><div class="balance-item">🌑 ТМ: ${player.darkMatter}</div><div class="balance-item">📦 Груз: ${Object.values(player.cargo).reduce((a, b) => a + b, 0)}/${ship.cargo}</div><div class="balance-item">💎 Минералы: ${mineralsList}</div><div class="balance-item">✨ Артефакты: ${artifactsList}</div><div class="balance-item">⭐ Уровень: ${player.level} (побед: ${player.wins})</div><div class="balance-item">🛡️ Прочность: ${Math.floor(player.hull)}%</div><div class="balance-item">📜 Заданий выполнено: ${player.missionsCompleted}</div><div class="balance-item">🎲 Рейтинг контрабандиста: ${player.contrabandRating}</div></div>`;
+            let componentsList = COMPONENTS.filter(c => player.components[c.id]).map(c => `${c.name}: ${player.components[c.id]}`).join(", ") || "нет";
+            let html = `<div class="balance-panel"><h4>📊 Баланс пилота</h4><div class="balance-item">💰 Кредиты: ${Math.floor(player.credits)}</div><div class="balance-item">🌀 СС: ${player.strangePower}</div><div class="balance-item">🌑 ТМ: ${player.darkMatter}</div><div class="balance-item">📦 Груз: ${Object.values(player.cargo).reduce((a, b) => a + b, 0)}/${ship.cargo}</div><div class="balance-item">💎 Минералы: ${mineralsList}</div><div class="balance-item">🔧 Компоненты: ${componentsList}</div><div class="balance-item">✨ Артефакты: ${artifactsList}</div><div class="balance-item">⭐ Уровень: ${player.level} (побед: ${player.wins})</div><div class="balance-item">🛡️ Прочность: ${Math.floor(player.hull)}%</div><div class="balance-item">📜 Заданий выполнено: ${player.missionsCompleted}</div><div class="balance-item">🎲 Рейтинг контрабандиста: ${player.contrabandRating}</div><div class="balance-item">💰 Счёт продаж: ${player.artifactSalesBalance}</div></div>`;
             let win = document.createElement("div"); win.className = "modal";
             win.innerHTML = `<div class="modal-content">${html}<div class="modal-buttons"><button id="closeStatsBtn">Закрыть</button></div></div>`;
             document.body.appendChild(win);
@@ -2110,7 +1900,7 @@
             html += `<div class="trade-row"><h4>Ваши артефакты:</h4>`;
             for (let a of playerArtifacts) {
                 let art = ARTIFACTS[a.id];
-                let avgPrice = getAveragePrice(a.id);
+                let avgPrice = artifactPriceHistory[a.id] ? Math.floor(artifactPriceHistory[a.id].totalSum / artifactPriceHistory[a.id].count) : art.basePrice;
                 html += `<div class="artifact-market-item">${art.name} x${a.count} (осталось ${a.usesLeft} зарядов) | Средняя цена: ${avgPrice}💰<br><input type="number" id="price_${a.id}" placeholder="Цена" min="1000" step="1000" value="${avgPrice}"> <button class="sellArtifactBtn" data-id="${a.id}" data-uses="${a.usesLeft}">Выставить на продажу</button></div>`;
             }
             html += `</div><div class="trade-row"><h4>Доступные артефакты на рынке:</h4>`;
@@ -2167,6 +1957,185 @@
             });
             win.querySelector("#closeMarketBtn").onclick = () => win.remove();
         }
+        function showComponentMarketModal() {
+            let html = `<h3>⚙️ ЧЁРНЫЙ РЫНОК (компоненты)</h3>`;
+            html += `<div class="balance-panel"><h4>Ваш счёт от продаж: ${player.artifactSalesBalance}💰</h4><button id="withdrawSalesBtn2">Забрать прибыль</button></div>`;
+            html += `<div class="trade-row"><h4>Ваши компоненты:</h4>`;
+            for (let c of COMPONENTS) {
+                let qty = player.components[c.id] || 0;
+                if (qty > 0) {
+                    let avgPrice = getAverageComponentPrice(c.id);
+                    html += `<div class="component-market-item">${c.name} x${qty} | Средняя цена: ${avgPrice}💰<br><input type="number" id="price_${c.id}" placeholder="Цена" min="500" step="500" value="${avgPrice}"> <button class="sellComponentBtn" data-id="${c.id}">Продать 1</button> <button class="sellAllComponentBtn" data-id="${c.id}">Продать все</button></div>`;
+                }
+            }
+            html += `</div><div class="trade-row"><h4>Доступные компоненты на рынке:</h4>`;
+            if (componentMarket.length === 0) html += "<p>Нет компонентов в продаже.</p>";
+            for (let i = 0; i < componentMarket.length; i++) {
+                let offer = componentMarket[i];
+                let comp = COMPONENTS.find(c => c.id === offer.componentId);
+                let seller = offer.sellerIsPlayer ? "Вы" : (bots.find(b => b.id === offer.sellerId)?.name || "Бот");
+                html += `<div class="component-market-item">${comp.name} — Цена: ${offer.price}💰 (продавец: ${seller}) <button class="buyComponentBtn" data-index="${i}">Купить</button>`;
+                if (offer.sellerIsPlayer) html += ` <button class="cancelComponentBtn" data-index="${i}">Снять с продажи</button>`;
+                html += `</div>`;
+            }
+            html += `<div class="modal-buttons"><button id="closeComponentMarketBtn">Закрыть</button></div>`;
+            let win = document.createElement("div"); win.className = "modal";
+            win.innerHTML = `<div class="modal-content">${html}</div>`;
+            document.body.appendChild(win);
+            win.querySelector("#withdrawSalesBtn2").onclick = () => { withdrawArtifactSales(player, true); win.remove(); showComponentMarketModal(); };
+            win.querySelectorAll(".sellComponentBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let id = btn.dataset.id;
+                    let priceInput = win.querySelector(`#price_${id}`);
+                    let price = parseInt(priceInput.value);
+                    if (isNaN(price) || price < 500) { alert("Введите корректную цену (минимум 500💰)"); return; }
+                    if (player.components[id] < 1) return;
+                    player.components[id]--;
+                    listComponentForSale(id, price, "player", true);
+                    win.remove();
+                    showComponentMarketModal();
+                };
+            });
+            win.querySelectorAll(".sellAllComponentBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let id = btn.dataset.id;
+                    let priceInput = win.querySelector(`#price_${id}`);
+                    let price = parseInt(priceInput.value);
+                    if (isNaN(price) || price < 500) { alert("Введите корректную цену (минимум 500💰)"); return; }
+                    let qty = player.components[id];
+                    if (qty === 0) return;
+                    for (let i = 0; i < qty; i++) {
+                        listComponentForSale(id, price, "player", true);
+                    }
+                    player.components[id] = 0;
+                    win.remove();
+                    showComponentMarketModal();
+                };
+            });
+            win.querySelectorAll(".buyComponentBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let idx = parseInt(btn.dataset.index);
+                    if (buyComponent(idx, player, true, "Вы")) {
+                        win.remove();
+                        showComponentMarketModal();
+                        updateUI();
+                    } else alert("Недостаточно кредитов или компонент уже продан.");
+                };
+            });
+            win.querySelectorAll(".cancelComponentBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let idx = parseInt(btn.dataset.index);
+                    cancelComponentSale(idx, true);
+                    win.remove();
+                    showComponentMarketModal();
+                };
+            });
+            win.querySelector("#closeComponentMarketBtn").onclick = () => win.remove();
+        }
+        function showCraftModal() {
+            let html = `<h3>🔧 МЕХАНИК</h3>`;
+            html += `<div class="trade-row"><h4>Доступные чертежи модулей (500 ТМ):</h4>`;
+            for (let [id, bp] of Object.entries(MODULE_BLUEPRINTS)) {
+                let owned = moduleBlueprintsOwned.includes(id);
+                html += `<div class="craft-item">${bp.name} ${owned ? "(есть)" : ""} ${!owned && player.darkMatter >= 500 ? `<button class="buyBlueprintBtn" data-id="${id}">Купить за 500🌑 ТМ</button>` : ""}</div>`;
+            }
+            html += `</div><div class="trade-row"><h4>Доступные чертежи улучшений (100 СС):</h4>`;
+            for (let [id, up] of Object.entries(UPGRADE_RECIPES)) {
+                let owned = upgradeBlueprintsOwned.includes(id);
+                html += `<div class="craft-item">${up.name} ${owned ? "(есть)" : ""} ${!owned && player.strangePower >= 100 ? `<button class="buyUpgradeBlueprintBtn" data-id="${id}">Купить за 100🌀 СС</button>` : ""}</div>`;
+            }
+            html += `</div><div class="trade-row"><h4>Создание модуля (нужно по 5 каждого компонента):</h4>`;
+            for (let [id, bp] of Object.entries(MODULE_BLUEPRINTS)) {
+                if (moduleBlueprintsOwned.includes(id)) {
+                    html += `<div class="craft-item">${bp.name} <button class="craftModuleBtn" data-id="${id}">Создать</button></div>`;
+                }
+            }
+            html += `</div><div class="trade-row"><h4>Создание улучшения (требуются компоненты):</h4>`;
+            for (let [id, up] of Object.entries(UPGRADE_RECIPES)) {
+                if (upgradeBlueprintsOwned.includes(id)) {
+                    let req = Object.entries(up.components).map(([cid, qty]) => `${COMPONENTS.find(c=>c.id===cid).name} x${qty}`).join(", ");
+                    html += `<div class="craft-item">${up.name} (нужно: ${req}) <button class="craftUpgradeBtn" data-id="${id}">Создать</button></div>`;
+                }
+            }
+            html += `</div><div class="trade-row"><h4>Очередь крафта (1 минута на каждый):</h4>`;
+            if (player.craftingQueue.length === 0) html += "<p>Нет активного крафта.</p>";
+            for (let craft of player.craftingQueue) {
+                let name = craft.isUpgrade ? UPGRADE_RECIPES[craft.type].name : MODULE_BLUEPRINTS[craft.type].name;
+                let remaining = Math.max(0, 60 - Math.floor((Date.now() - craft.timestamp) / 1000));
+                html += `<div class="craft-progress">${name} — осталось ${remaining} сек.</div>`;
+            }
+            html += `</div><div class="trade-row"><h4>Ваши модули и улучшения:</h4>`;
+            for (let mod of player.ownedModules) {
+                let name = mod.isUpgrade ? UPGRADE_RECIPES[mod.type].name : MODULE_BLUEPRINTS[mod.type].name;
+                html += `<div class="module-inventory-item">${name} ${mod.isUpgrade ? `уровень ${mod.level}` : `количество ${mod.count}`} <button class="installModuleBtn" data-type="${mod.type}" data-upgrade="${mod.isUpgrade}">Установить (5000💰)</button> <button class="uninstallModuleBtn" data-type="${mod.type}">Снять (5000💰)</button></div>`;
+            }
+            html += `<div class="modal-buttons"><button id="closeCraftBtn">Закрыть</button></div>`;
+            let win = document.createElement("div"); win.className = "modal";
+            win.innerHTML = `<div class="modal-content">${html}</div>`;
+            document.body.appendChild(win);
+            win.querySelectorAll(".buyBlueprintBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let id = btn.dataset.id;
+                    if (player.darkMatter >= 500 && !moduleBlueprintsOwned.includes(id)) {
+                        player.darkMatter -= 500;
+                        moduleBlueprintsOwned.push(id);
+                        addLogToGame(`Вы купили чертёж ${MODULE_BLUEPRINTS[id].name}.`, "success", true);
+                        saveGame();
+                        win.remove();
+                        showCraftModal();
+                    } else alert("Недостаточно ТМ или уже есть чертёж.");
+                };
+            });
+            win.querySelectorAll(".buyUpgradeBlueprintBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let id = btn.dataset.id;
+                    if (player.strangePower >= 100 && !upgradeBlueprintsOwned.includes(id)) {
+                        player.strangePower -= 100;
+                        upgradeBlueprintsOwned.push(id);
+                        addLogToGame(`Вы купили чертёж ${UPGRADE_RECIPES[id].name}.`, "success", true);
+                        saveGame();
+                        win.remove();
+                        showCraftModal();
+                    } else alert("Недостаточно Силы Странника или уже есть чертёж.");
+                };
+            });
+            win.querySelectorAll(".craftModuleBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let id = btn.dataset.id;
+                    startCraft(id, false);
+                    win.remove();
+                    showCraftModal();
+                };
+            });
+            win.querySelectorAll(".craftUpgradeBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let id = btn.dataset.id;
+                    startCraft(id, true);
+                    win.remove();
+                    showCraftModal();
+                };
+            });
+            win.querySelectorAll(".installModuleBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let type = btn.dataset.type;
+                    let isUpgrade = btn.dataset.upgrade === "true";
+                    installModule(type, isUpgrade);
+                    win.remove();
+                    showCraftModal();
+                    updateUI();
+                };
+            });
+            win.querySelectorAll(".uninstallModuleBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let type = btn.dataset.type;
+                    uninstallModule(type);
+                    win.remove();
+                    showCraftModal();
+                    updateUI();
+                };
+            });
+            win.querySelector("#closeCraftBtn").onclick = () => win.remove();
+        }
         document.getElementById("dockShopBtn").onclick = () => { openShipShopModal(); upd(); };
         document.getElementById("dockCollectAllBtn").onclick = () => { collectAllPlanetResources(true, player); saveGame(); upd(); };
         document.getElementById("dockTeleportBtn").onclick = () => showTeleportModal();
@@ -2175,6 +2144,8 @@
         document.getElementById("dockMissionBtn").onclick = () => showMissionModal();
         document.getElementById("dockContrabandBtn").onclick = () => showContrabandModal();
         document.getElementById("dockArtifactMarketBtn").onclick = () => showArtifactMarketModal();
+        document.getElementById("dockComponentMarketBtn").onclick = () => showComponentMarketModal();
+        document.getElementById("dockCraftBtn").onclick = () => showCraftModal();
         document.getElementById("dockMenuBtn").onclick = () => { modal.remove(); clearInterval(timerInterval); currentDockModal = null; gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
         document.getElementById("closeDockBtn").onclick = () => { modal.remove(); clearInterval(timerInterval); currentDockModal = null; exitDockToRandom(); };
     }
@@ -2206,6 +2177,7 @@
         setInterval(() => { if (gameActive) updateMissionByTimer(); }, 60000);
         setInterval(() => { if (gameActive) updateContrabandMission(); }, CONTRABAND_MISSION_COOLDOWN);
         setInterval(() => { if (gameActive && player.immunityUntil && Date.now() > player.immunityUntil && player.immunityUntil !== 0) { addLogToGame("🛡️ Иммунитет закончился! Боты могут атаковать.", "warning", true); player.immunityUntil = 0; saveGame(); } }, 60000);
+        setInterval(() => processCrafting(), 1000);
         if (player.inDock) openDock(true);
     }
     function startBotAI() { if (botInterval) clearInterval(botInterval); botInterval = setInterval(botAI, 500); }
@@ -2216,10 +2188,29 @@
         planetStocks = initStocks(); planetPrices = []; for (let i = 0; i < PLANET_COUNT; i++) planetPrices[i] = generatePricesForPlanet(i + 1, Date.now());
         lastPriceUpdate = Date.now(); lastMissionUpdate = Date.now(); bots = []; nextBotId = 100; initPlanets();
         for (let i = 0; i < MAX_LEVEL1_BOTS; i++) createBot(1, 0);
-        player = { credits: START_CREDITS, cargo: {}, wins: 0, level: 1, shipLevel: 1, currentPlanet: Math.floor(Math.random() * PLANET_COUNT) + 1, fuel: getShip(1).fuelCap, strangePower: START_STRANGE_POWER, darkMatter: 0, hull: 100, isDead: false, immunityUntil: Date.now() + IMMUNITY_DURATION, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false, inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0, luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false, lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null, artifactSalesBalance: 0 };
-        ALL_GOODS.forEach(g => player.cargo[g.id] = 0); playerArtifacts = [];
-        currentMission = null; missionCompleted = false; currentContrabandMission = null; lastContrabandUpdate = Date.now(); mineralPriceMultipliers = MINERALS.map(() => 0.8 + Math.random() * 0.4);
+        player = {
+            credits: START_CREDITS, cargo: {}, components: { comp1:0, comp2:0, comp3:0, comp4:0, comp5:0 },
+            wins: 0, level: 1, shipLevel: 1, currentPlanet: Math.floor(Math.random() * PLANET_COUNT) + 1,
+            fuel: getShip(1).fuelCap, strangePower: START_STRANGE_POWER, darkMatter: 0, hull: 100, isDead: false,
+            immunityUntil: Date.now() + IMMUNITY_DURATION, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false,
+            tmHarvesterLevel: 0, ssGeneratorLevel: 0, optimizerLevel: 0,
+            inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0,
+            luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false,
+            lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null,
+            artifactSalesBalance: 0, ownedModules: [], craftingQueue: []
+        };
+        ALL_GOODS.forEach(g => player.cargo[g.id] = 0);
+        COMPONENTS.forEach(c => player.components[c.id] = 0);
+        playerArtifacts = [];
+        currentMission = null; missionCompleted = false; currentContrabandMission = null; lastContrabandUpdate = Date.now();
+        mineralPriceMultipliers = MINERALS.map(() => 0.8 + Math.random() * 0.4);
         generateContrabandOffers();
+        moduleBlueprintsOwned = [];
+        upgradeBlueprintsOwned = [];
+        artifactMarket = [];
+        componentMarket = [];
+        componentPriceHistory = {};
+        artifactPriceHistory = {};
         saveGame();
     }
 
