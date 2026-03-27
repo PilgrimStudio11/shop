@@ -1,7 +1,7 @@
 // main.js – точка входа, инициализация, таймеры, обработчики
 
-import { CONFIG, GOODS, MINERALS, ARTIFACTS, SHIPS, MODULE_BLUEPRINTS, UPGRADE_RECIPES } from './config.js';
-import { player, initPlayer, getShip, updatePlayerLevel, getTotalPower, getOptimizerCost, getDockCost, getTMHarvestBonus, getSSGeneratorBonus, addArtifact, useArtifact, hasArtifact } from './player.js';
+import { CONFIG, GOODS, MINERALS, ARTIFACTS, SHIPS, MODULE_BLUEPRINTS, UPGRADE_RECIPES, COMPONENTS } from './config.js';
+import { player, initPlayer, getShip, updatePlayerLevel, getOptimizerCost, getDockCost, getTMHarvestBonus, getSSGeneratorBonus, addArtifact, useArtifact, hasArtifact } from './player.js';
 import { addLogToGame, saveGame, loadGame, randomRange, gameLog } from './utils.js';
 import { move, hyperJump } from './gameCore.js';
 import { generateMission, updateMissionByTimer, currentMission, missionCompleted, onBuyGood, onSellGood, tryFindGoods, tryFindArtifact, tryFindMineral, tryFindComponent, sellMinerals } from './trade.js';
@@ -10,7 +10,7 @@ import { bots, createBot, startBotAI, scheduleBotCreation, removeBot, getClosest
 import { planetOwners, planetPrevOwnersCount, planetIncome, planetTM, planetMinerIncome, planetModules, initPlanets, getPlanetMaxStorage, getPlanetStorageUpgradeCost, getPlanetIncomePercent, getPlanetPrice, canBuyPlanet, buyPlanet, installPlanetModule, upgradePlanetStorage, addIncomeToPlanet, collectAllPlanetResources, updatePlanetResources } from './planets.js';
 import { moduleBlueprintsOwned, upgradeBlueprintsOwned, buyBlueprint, startCraft, processCrafting, installModule, uninstallModule } from './crafting.js';
 import { artifactMarket, componentMarket, artifactPriceHistory, componentPriceHistory, getAverageComponentPrice, updateComponentPriceHistory, listComponentForSale, cancelComponentSale, buyComponent, updateArtifactPriceHistory, listArtifactForSale, cancelArtifactSale, buyArtifact, withdrawArtifactSales } from './market.js';
-import { resolveCombat, fightWithBot, playerDefeated, encounterWithBots } from './combat.js';
+import { resolveCombat, fightWithBot, playerDefeated, encounterWithBots, getEntityPower } from './combat.js';
 import { triggerRandomEvent } from './events.js';
 import { updateUI, openPlanetMenu, openDock, openShipShopModal, updateRankingModal, showInfoModal, exitDockToRandom } from './ui.js';
 
@@ -147,10 +147,10 @@ function simulateTimePassed(ms) {
         }
         for (let [planet, bList] of planetsWithBots) {
             if (bList.length < 2) continue;
-            bList.sort((a,b) => getTotalPower(b) - getTotalPower(a));
+            bList.sort((a,b) => getEntityPower(b) - getEntityPower(a));
             const attacker = bList[0];
             const defender = bList[1];
-            if (getTotalPower(attacker) > getTotalPower(defender) * (1 + CONFIG.BOT_ATTACK_THRESHOLD)) {
+            if (getEntityPower(attacker) > getEntityPower(defender) * (1 + CONFIG.BOT_ATTACK_THRESHOLD)) {
                 resolveCombat(attacker, defender, false);
             }
         }
@@ -228,7 +228,6 @@ function resetWorldAndNewPlayer() {
 }
 
 function createNewPlayerInCurrentWorld() {
-    // Создаёт нового игрока в текущем мире без сброса мира
     initPlayer();
     player.currentPlanet = randomRange(1, CONFIG.PLANET_COUNT);
     player.fuel = getShip().fuelCap;
@@ -331,8 +330,64 @@ function registerPWA() {
     });
 }
 
+// Функция полной загрузки сохранения
+function loadFullGame() {
+    const saved = loadGame();
+    if (!saved) return false;
+    try {
+        // Восстанавливаем игрока
+        Object.assign(player, saved.player);
+        // Восстанавливаем ботов
+        bots.length = 0;
+        bots.push(...saved.bots);
+        nextBotId = saved.gameState.nextBotId;
+        // Восстанавливаем планеты
+        if (saved.planets) {
+            for (let i = 0; i < CONFIG.PLANET_COUNT; i++) {
+                if (saved.planets.owners && saved.planets.owners[i] !== undefined) planetOwners[i] = saved.planets.owners[i];
+                if (saved.planets.prevOwnersCount && saved.planets.prevOwnersCount[i] !== undefined) planetPrevOwnersCount[i] = saved.planets.prevOwnersCount[i];
+                if (saved.planets.income && saved.planets.income[i] !== undefined) planetIncome[i] = saved.planets.income[i];
+                if (saved.planets.tm && saved.planets.tm[i] !== undefined) planetTM[i] = saved.planets.tm[i];
+                if (saved.planets.minerIncome && saved.planets.minerIncome[i] !== undefined) planetMinerIncome[i] = saved.planets.minerIncome[i];
+                if (saved.planets.modules && saved.planets.modules[i]) planetModules[i] = saved.planets.modules[i];
+            }
+        }
+        if (saved.gameState) {
+            if (saved.gameState.planetStocks) planetStocks = saved.gameState.planetStocks;
+            if (saved.gameState.planetPrices) planetPrices = saved.gameState.planetPrices;
+            if (saved.gameState.mineralPriceMultipliers) mineralPriceMultipliers = saved.gameState.mineralPriceMultipliers;
+            if (saved.gameState.artifactMarket) artifactMarket = saved.gameState.artifactMarket;
+            if (saved.gameState.componentMarket) componentMarket = saved.gameState.componentMarket;
+            if (saved.gameState.componentPriceHistory) componentPriceHistory = saved.gameState.componentPriceHistory;
+            if (saved.gameState.artifactPriceHistory) artifactPriceHistory = saved.gameState.artifactPriceHistory;
+            if (saved.gameState.activeContrabandOffers) activeContrabandOffers = saved.gameState.activeContrabandOffers;
+            if (saved.gameState.moduleBlueprintsOwned) moduleBlueprintsOwned = saved.gameState.moduleBlueprintsOwned;
+            if (saved.gameState.upgradeBlueprintsOwned) upgradeBlueprintsOwned = saved.gameState.upgradeBlueprintsOwned;
+            if (saved.gameState.currentMission) Object.assign(currentMission, saved.gameState.currentMission);
+            if (saved.gameState.missionCompleted !== undefined) missionCompleted = saved.gameState.missionCompleted;
+            lastPriceUpdate = saved.gameState.lastPriceUpdate;
+            lastMissionUpdate = saved.gameState.lastMissionUpdate;
+            lastContrabandUpdate = saved.gameState.lastContrabandUpdate;
+        }
+        return true;
+    } catch(e) {
+        console.error("Ошибка загрузки сохранения", e);
+        return false;
+    }
+}
+
 window.onload = () => {
-    // Присваиваем глобальные объекты для доступа из UI
+    // Инициализируем базовые массивы (на случай, если сохранение не загрузится)
+    initPlanetData();
+    initPlanets();
+
+    // Загрузка сохранения
+    const loaded = loadFullGame();
+    if (!loaded) {
+        resetWorldAndNewPlayer();
+    }
+
+    // Обновляем глобальные ссылки после загрузки
     window.planetStocks = planetStocks;
     window.planetPrices = planetPrices;
     window.mineralPriceMultipliers = mineralPriceMultipliers;
@@ -356,105 +411,8 @@ window.onload = () => {
     window.upgradeBlueprintsOwned = upgradeBlueprintsOwned;
     window.nextBotId = nextBotId;
     window.gameActive = gameActive;
-    window.CONFIG = CONFIG;
-    window.GOODS = GOODS;
-    window.MINERALS = MINERALS;
-    window.ARTIFACTS = ARTIFACTS;
-    window.SHIPS = SHIPS;
-    window.COMPONENTS = COMPONENTS;
-    window.MODULE_BLUEPRINTS = MODULE_BLUEPRINTS;
-    window.UPGRADE_RECIPES = UPGRADE_RECIPES;
-    window.player = player;
-    window.getShip = getShip;
-    window.getTotalPower = getTotalPower;
-    window.getOptimizerCost = getOptimizerCost;
-    window.getDockCost = getDockCost;
-    window.getTMHarvestBonus = getTMHarvestBonus;
-    window.getSSGeneratorBonus = getSSGeneratorBonus;
-    window.addArtifact = addArtifact;
-    window.useArtifact = useArtifact;
-    window.hasArtifact = hasArtifact;
-    window.addLogToGame = addLogToGame;
-    window.saveGame = saveGame;
-    window.loadGame = loadGame;
-    window.randomRange = randomRange;
-    window.gameLog = gameLog;
-    window.move = move;
-    window.hyperJump = hyperJump;
-    window.generateMission = generateMission;
-    window.updateMissionByTimer = updateMissionByTimer;
-    window.onBuyGood = onBuyGood;
-    window.onSellGood = onSellGood;
-    window.tryFindGoods = tryFindGoods;
-    window.tryFindArtifact = tryFindArtifact;
-    window.tryFindMineral = tryFindMineral;
-    window.tryFindComponent = tryFindComponent;
-    window.sellMinerals = sellMinerals;
-    window.generateContrabandOffers = generateContrabandOffers;
-    window.takeContrabandOffer = takeContrabandOffer;
-    window.takeContrabandCargo = takeContrabandCargo;
-    window.deliverContraband = deliverContraband;
-    window.patrolEncounter = patrolEncounter;
-    window.createBot = createBot;
-    window.startBotAI = startBotAI;
-    window.scheduleBotCreation = scheduleBotCreation;
-    window.removeBot = removeBot;
-    window.getClosestEnemyPosition = getClosestEnemyPosition;
-    window.botTradeAndUpgrade = botTradeAndUpgrade;
-    window.botTryContraband = botTryContraband;
-    window.initPlanets = initPlanets;
-    window.getPlanetMaxStorage = getPlanetMaxStorage;
-    window.getPlanetStorageUpgradeCost = getPlanetStorageUpgradeCost;
-    window.getPlanetIncomePercent = getPlanetIncomePercent;
-    window.getPlanetPrice = getPlanetPrice;
-    window.canBuyPlanet = canBuyPlanet;
-    window.buyPlanet = buyPlanet;
-    window.installPlanetModule = installPlanetModule;
-    window.upgradePlanetStorage = upgradePlanetStorage;
-    window.addIncomeToPlanet = addIncomeToPlanet;
-    window.collectAllPlanetResources = collectAllPlanetResources;
-    window.updatePlanetResources = updatePlanetResources;
-    window.buyBlueprint = buyBlueprint;
-    window.startCraft = startCraft;
-    window.processCrafting = processCrafting;
-    window.installModule = installModule;
-    window.uninstallModule = uninstallModule;
-    window.getAverageComponentPrice = getAverageComponentPrice;
-    window.updateComponentPriceHistory = updateComponentPriceHistory;
-    window.listComponentForSale = listComponentForSale;
-    window.cancelComponentSale = cancelComponentSale;
-    window.buyComponent = buyComponent;
-    window.updateArtifactPriceHistory = updateArtifactPriceHistory;
-    window.listArtifactForSale = listArtifactForSale;
-    window.cancelArtifactSale = cancelArtifactSale;
-    window.buyArtifact = buyArtifact;
-    window.withdrawArtifactSales = withdrawArtifactSales;
-    window.resolveCombat = resolveCombat;
-    window.fightWithBot = fightWithBot;
-    window.playerDefeated = playerDefeated;
-    window.encounterWithBots = encounterWithBots;
-    window.triggerRandomEvent = triggerRandomEvent;
-    window.updateUI = updateUI;
-    window.openPlanetMenu = openPlanetMenu;
-    window.openDock = openDock;
-    window.openShipShopModal = openShipShopModal;
-    window.updateRankingModal = updateRankingModal;
-    window.showInfoModal = showInfoModal;
-    window.exitDockToRandom = exitDockToRandom;
-    window.simulateTimePassed = simulateTimePassed;
 
-    // Загрузка сохранения или создание нового мира
-    const saved = loadGame();
-    if (saved) {
-        // Восстанавливаем данные из сохранения (упрощённо, но в полной версии нужно восстановить все переменные)
-        Object.assign(player, saved.player);
-        bots.length = 0;
-        bots.push(...saved.bots);
-        // ... остальное восстановление (опущено для краткости, но в полном коде нужно)
-    } else {
-        resetWorldAndNewPlayer();
-    }
-
+    // Симуляция пропущенного времени
     const lastSaveTime = localStorage.getItem("starNomadFullLastTime");
     if (lastSaveTime) {
         const timePassed = Date.now() - parseInt(lastSaveTime);
@@ -462,15 +420,31 @@ window.onload = () => {
     }
     localStorage.setItem("starNomadFullLastTime", Date.now().toString());
 
-    document.getElementById("continueBtn").disabled = player.isDead;
-    document.getElementById("newGameBtn").disabled = !player.isDead;
-    document.getElementById("continueBtn").onclick = () => startGame();
-    document.getElementById("newGameBtn").onclick = () => {
+    // Привязываем обработчики кнопок
+    const continueBtn = document.getElementById("continueBtn");
+    const newGameBtn = document.getElementById("newGameBtn");
+    const resetWorldBtn = document.getElementById("resetWorldBtn");
+    const shopBtn = document.getElementById("shopBtn");
+    const rankingBtn = document.getElementById("rankingBtn");
+    const infoBtn = document.getElementById("infoBtn");
+    const exportBtn = document.getElementById("exportBtn");
+    const importBtn = document.getElementById("importBtn");
+    const exitBtn = document.getElementById("exitBtn");
+    const leftBtn = document.getElementById("leftBtn");
+    const rightBtn = document.getElementById("rightBtn");
+    const hyperLeftBtn = document.getElementById("hyperLeftBtn");
+    const hyperRightBtn = document.getElementById("hyperRightBtn");
+    const menuBtn = document.getElementById("menuBtn");
+    const dockBtn = document.getElementById("dockBtn");
+    const planetCard = document.getElementById("currentPlanetCard");
+
+    if (continueBtn) continueBtn.onclick = () => startGame();
+    if (newGameBtn) newGameBtn.onclick = () => {
         if (!player.isDead) { alert("Новая игра только после гибели."); return; }
         createNewPlayerInCurrentWorld();
         player.isDead = false;
-        document.getElementById("continueBtn").disabled = false;
-        document.getElementById("newGameBtn").disabled = true;
+        continueBtn.disabled = false;
+        newGameBtn.disabled = true;
         if (gameActive) {
             gameActive = false;
             if (window.botInterval) clearInterval(window.botInterval);
@@ -478,32 +452,36 @@ window.onload = () => {
             document.getElementById("menuScreen").style.display = "block";
             document.getElementById("gameScreen").classList.add("hidden");
         }
+        updateUI();
     };
-    document.getElementById("resetWorldBtn").onclick = () => resetWorld();
-    document.getElementById("shopBtn").onclick = () => openShipShopModal();
-    document.getElementById("rankingBtn").onclick = () => updateRankingModal();
-    document.getElementById("infoBtn").onclick = () => showInfoModal();
-    document.getElementById("exportBtn").onclick = () => exportSave();
-    document.getElementById("importBtn").onclick = () => importSave();
-    document.getElementById("exitBtn").onclick = () => { saveGame(); alert("Игра сохранена."); };
-    document.getElementById("leftBtn").onclick = () => move(-1);
-    document.getElementById("rightBtn").onclick = () => move(1);
-    document.getElementById("hyperLeftBtn").onclick = () => hyperJump(-1);
-    document.getElementById("hyperRightBtn").onclick = () => hyperJump(1);
-    document.getElementById("menuBtn").onclick = () => {
+    if (resetWorldBtn) resetWorldBtn.onclick = () => resetWorld();
+    if (shopBtn) shopBtn.onclick = () => openShipShopModal();
+    if (rankingBtn) rankingBtn.onclick = () => updateRankingModal();
+    if (infoBtn) infoBtn.onclick = () => showInfoModal();
+    if (exportBtn) exportBtn.onclick = () => exportSave();
+    if (importBtn) importBtn.onclick = () => importSave();
+    if (exitBtn) exitBtn.onclick = () => { saveGame(); alert("Игра сохранена."); };
+    if (leftBtn) leftBtn.onclick = () => move(-1);
+    if (rightBtn) rightBtn.onclick = () => move(1);
+    if (hyperLeftBtn) hyperLeftBtn.onclick = () => hyperJump(-1);
+    if (hyperRightBtn) hyperRightBtn.onclick = () => hyperJump(1);
+    if (menuBtn) menuBtn.onclick = () => {
         gameActive = false;
         if (window.botInterval) clearInterval(window.botInterval);
         if (window.botCreationTimeout) clearTimeout(window.botCreationTimeout);
         document.getElementById("menuScreen").style.display = "block";
         document.getElementById("gameScreen").classList.add("hidden");
-        document.getElementById("continueBtn").disabled = player.isDead;
-        document.getElementById("newGameBtn").disabled = !player.isDead;
+        continueBtn.disabled = player.isDead;
+        newGameBtn.disabled = !player.isDead;
         saveGame();
     };
-    document.getElementById("dockBtn").onclick = () => openDock(false);
-    document.getElementById("currentPlanetCard").onclick = () => { if (!player.isDead) openPlanetMenu(player.currentPlanet); };
+    if (dockBtn) dockBtn.onclick = () => openDock(false);
+    if (planetCard) planetCard.onclick = () => { if (!player.isDead) openPlanetMenu(player.currentPlanet); };
+
+    // Показываем главное меню и обновляем UI
     document.getElementById("menuScreen").style.display = "block";
     if (!currentMission && !missionCompleted) generateMission();
     generateContrabandOffers();
+    updateUI();
     registerPWA();
 };
