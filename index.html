@@ -163,9 +163,9 @@
     const TM_GENERATOR_RATE = 10;
     const BOT_ATTACK_THRESHOLD = 0.05;
     const RETREAT_COST = 1000;
-    // Новые параметры баланса
-    const ROCKET_POWER = 2;      // ракета даёт 2 силы (было 0.5)
-    const TM_POWER = 0.1;        // 1 ТМ даёт 0.1 силы (было 0.01)
+    // Параметры баланса
+    const ROCKET_POWER = 2;      // ракета даёт 2 силы
+    const TM_POWER = 0.01;       // 1 ТМ даёт 0.01 силы (оригинальное значение)
 
     const GOODS = [
         { id: "gold", name: "Золото", baseBuy:100, baseSell:100, spread:30, cargoSpace:1, rocket:false },
@@ -680,9 +680,9 @@
                 if(generated>0) planetTM[i]+=generated;
             }
             if(planetModules[i].planetMiner && planetOwners[i]!==null){
-                let steps = Math.floor(deltaMinutes / 10); // каждые 10 минут
+                let steps = Math.floor(deltaMinutes / 10);
                 for(let s=0;s<steps;s++){
-                    let income = Math.floor(Math.random()*16)+5; // 5-20
+                    let income = Math.floor(Math.random()*16)+5;
                     planetMinerIncome[i] += income;
                 }
             }
@@ -690,7 +690,7 @@
     }
     function releaseBotPlanets(botId){ for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]===botId){ planetOwners[i]=null; planetModules[i]={taxBoost:false, tmLaboratory:false, storageLevel:0, planetMiner:false, teleport:false}; planetIncome[i]=0; planetTM[i]=0; planetMinerIncome[i]=0; } }
 
-    // Исправленная боевая система: расход ресурсов равен силе противника, а не всей разнице
+    // Боевая система с расходом ресурсов ровно на силу противника
     function resolveCombat(attacker, defender, isPlayerAttacker, eventFight = false) {
         let powerA = getTotalPower(attacker);
         let powerD = getTotalPower(defender);
@@ -700,7 +700,6 @@
             return false;
         }
         
-        // Нужно покрыть силу противника D ресурсами
         let neededPower = powerD;
         let remainingNeeded = neededPower;
         
@@ -708,7 +707,6 @@
         let usedTM = 0;
         let hullDamage = 0;
         
-        // Сначала ракеты
         if (attacker.cargo.rockets && attacker.cargo.rockets > 0 && remainingNeeded > 0) {
             let maxRocketPower = attacker.cargo.rockets * ROCKET_POWER;
             if (maxRocketPower >= remainingNeeded) {
@@ -722,7 +720,6 @@
             }
         }
         
-        // Затем ТМ
         if (remainingNeeded > 0 && attacker.darkMatter > 0) {
             let maxTMPower = attacker.darkMatter * TM_POWER;
             if (maxTMPower >= remainingNeeded) {
@@ -736,7 +733,6 @@
             }
         }
         
-        // Если ресурсов не хватило, остаток идёт в прочность
         if (remainingNeeded > 0) {
             let basePower = getShip(attacker.shipLevel).power;
             hullDamage = (remainingNeeded / basePower) * 100;
@@ -744,7 +740,6 @@
             if (attacker.hull < 0) attacker.hull = 0;
         }
         
-        // Если прочность упала до 0, атакующий погибает
         if (attacker.hull <= 0) {
             let temp = attacker; attacker = defender; defender = temp;
             let stolenCredits = Math.floor(defender.credits);
@@ -790,7 +785,6 @@
             return true;
         }
         
-        // Победа атакующего: захват ресурсов
         let stolenCredits = Math.floor(defender.credits);
         attacker.credits += stolenCredits;
         defender.credits = 0;
@@ -913,6 +907,11 @@
         if(newPlanet<1) newPlanet=1;
         if(newPlanet>PLANET_COUNT) newPlanet=PLANET_COUNT;
         player.currentPlanet=newPlanet;
+        
+        // Явно обновляем номер на карточке
+        const planetNameElem = document.getElementById("currentPlanetName");
+        if(planetNameElem) planetNameElem.innerHTML = `Планета #${player.currentPlanet}`;
+        
         player.fuel--;
         player.strangePower++;
         if(player.hasSSGenerator){ player.strangePower+=2; addLogToGame(`Генератор СС: +2 СС`,"success",true); }
@@ -934,9 +933,12 @@
         if(player.contrabandMission){
             await patrolEncounter(true);
         }
+        // Обновляем остальной интерфейс
         updateUI();
         encounterWithBots();
         saveGame();
+        // Гарантируем ещё одно обновление номера после возможных изменений
+        if(planetNameElem) planetNameElem.innerHTML = `Планета #${player.currentPlanet}`;
     }
     function hyperJump(direction){
         if(player.isDead){ addLogToGame("Ваш корабль уничтожен.","warning",true); return; }
@@ -949,11 +951,17 @@
         let randomIndex=Math.floor(Math.random()*available.length);
         let newPlanet=available[randomIndex];
         player.currentPlanet=newPlanet;
+        
+        // Явно обновляем номер на карточке
+        const planetNameElem = document.getElementById("currentPlanetName");
+        if(planetNameElem) planetNameElem.innerHTML = `Планета #${player.currentPlanet}`;
+        
         player.strangePower-=cost;
         addLogToGame(`Гиперпрыжок ${direction===-1?"налево":"направо"}! Вы на планете #${player.currentPlanet}`,"success",true);
         updateUI();
         encounterWithBots();
         saveGame();
+        if(planetNameElem) planetNameElem.innerHTML = `Планета #${player.currentPlanet}`;
     }
 
     function generateMission(){
@@ -1431,6 +1439,8 @@
     function importSave(){ let input=document.createElement("input"); input.type="file"; input.accept="application/json"; input.onchange=e=>{ let file=e.target.files[0]; if(!file) return; let reader=new FileReader(); reader.onload=ev=>{ try{ let data=JSON.parse(ev.target.result); localStorage.setItem("starNomadFull",JSON.stringify(data)); alert("Сохранение импортировано. Перезагрузите страницу."); location.reload(); }catch(err){ alert("Ошибка импорта."); } }; reader.readAsText(file); }; input.click(); }
     function updateUI(){
         let ship=getShip(player.shipLevel);
+        let planetNameElem = document.getElementById("currentPlanetName");
+        if(planetNameElem) planetNameElem.innerHTML = `Планета #${player.currentPlanet}`;
         document.getElementById("shipName").innerText=ship.name;
         document.getElementById("powerVal").innerText=getTotalPower(player).toFixed(2);
         document.getElementById("hullVal").innerText=Math.floor(player.hull);
@@ -1443,7 +1453,6 @@
         document.getElementById("winsVal").innerText=player.wins;
         document.getElementById("missionsCompletedVal").innerText=player.missionsCompleted;
         document.getElementById("contrabandRatingVal").innerText=player.contrabandRating;
-        document.getElementById("currentPlanetName").innerHTML=`Планета #${player.currentPlanet}`;
         let cargoHtml=''; 
         for(let g of ALL_GOODS){
             let qty=player.cargo[g.id]||0;
