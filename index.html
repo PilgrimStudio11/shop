@@ -54,7 +54,7 @@
         .info-table th, .info-table td { padding: 6px 4px; text-align:left; border-bottom:1px solid #2a577a; background:#0a1a2a; }
         .dock-timer { background: #0a111f; padding: 8px 16px; border-radius: 32px; font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 10px; }
         .dock-timer span { color: #ffcf6e; }
-        .artifact-market-item { background: #07121f; border-radius: 16px; padding: 8px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; }
+        .artifact-market-item { background: #07121f; border-radius: 16px; padding: 8px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
     </style>
 </head>
 <body>
@@ -189,7 +189,8 @@
         immunityUntil: 0, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false,
         inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0,
         luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false,
-        lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null
+        lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null,
+        artifactSalesBalance: 0   // накопленная выручка от продажи артефактов
     };
     ALL_GOODS.forEach(g => player.cargo[g.id] = 0);
 
@@ -234,6 +235,7 @@
             mineralPriceMultipliers = data.mineralPriceMultipliers || MINERALS.map(() => 1.0);
             artifactMarket = data.artifactMarket || [];
             activeContrabandOffers = data.activeContrabandOffers || [];
+            if (player.artifactSalesBalance === undefined) player.artifactSalesBalance = 0;
             for (let a of playerArtifacts) { if (a.count === undefined) a.count = 1; if (a.usesLeft === undefined && a.uses) a.usesLeft = a.uses; }
             if (!planetOwners.length) initPlanets();
             if (!planetStocks) planetStocks = initStocks();
@@ -373,7 +375,15 @@
         while (logDiv.children.length > 50) logDiv.removeChild(logDiv.firstChild);
         if (currentDockModal) updateDockLog();
     }
-    function updateDockLog() { if (currentDockModal) { let d = currentDockModal.querySelector(".dock-log"); if (d) d.innerHTML = document.getElementById("logBox").innerHTML; } }
+    function updateDockLog() {
+        if (currentDockModal) {
+            let d = currentDockModal.querySelector(".dock-log");
+            if (d) {
+                d.innerHTML = document.getElementById("logBox").innerHTML;
+                d.scrollTop = d.scrollHeight; // авто-прокрутка
+            }
+        }
+    }
 
     function createBot(level, wins) {
         let shipLevel = Math.min(level, 21);
@@ -497,8 +507,9 @@
         buyer.credits -= price;
         addArtifact(isPlayer ? playerArtifacts : buyer.artifacts, offer.artifactId, offer.usesLeft);
         if (offer.sellerIsPlayer) {
-            player.credits += sellerGets;
-            addLogToGame(`Вы продали ${ARTIFACTS[offer.artifactId].name} за ${price}💰 (комиссия ${commission}💰).`, "success", true);
+            // Деньги идут на счёт продаж, а не напрямую в кредиты
+            player.artifactSalesBalance += sellerGets;
+            addLogToGame(`Вы продали ${ARTIFACTS[offer.artifactId].name} за ${price}💰 (комиссия ${commission}💰). Средства поступят на ваш счёт продаж.`, "success", true);
         } else {
             let sellerBot = bots.find(b => b.id === offer.sellerId);
             if (sellerBot) sellerBot.credits += sellerGets;
@@ -507,6 +518,16 @@
         artifactMarket.splice(index, 1);
         saveGame();
         return true;
+    }
+    function withdrawArtifactSales() {
+        if (player.artifactSalesBalance > 0) {
+            player.credits += player.artifactSalesBalance;
+            addLogToGame(`Вы забрали ${player.artifactSalesBalance}💰 со счёта продаж артефактов.`, "success", true);
+            player.artifactSalesBalance = 0;
+            saveGame();
+        } else {
+            addLogToGame("У вас нет накопленной прибыли от продаж.", "warning", true);
+        }
     }
 
     // ======================= КОНТРАБАНДА С ВЫБОРОМ =======================
@@ -1928,7 +1949,7 @@
             <button id="dockArtifactMarketBtn">🏺 РЫНОК АРТЕФАКТОВ</button>
             <button id="dockMenuBtn">🏠 ГЛАВНОЕ МЕНЮ</button>
             <button id="closeDockBtn" style="background:#8b0000;">ВЫЙТИ ИЗ ДОКА</button>
-        </div><div id="dockContent" class="dock-section"><p>Выберите действие.</p></div><div class="dock-log"></div><div class="modal-buttons"></div></div></div>`;
+        </div><div id="dockContent" class="dock-section"><p>Добро пожаловать в док. Выберите действие из меню.</p></div><div class="dock-log"></div><div class="modal-buttons"></div></div></div>`;
         document.body.appendChild(modal); currentDockModal = modal;
         function updateDockTimer() {
             let timerSpan = modal.querySelector("#dockTimerDisplay");
@@ -1942,7 +1963,7 @@
         }
         let timerInterval = setInterval(updateDockTimer, 60000);
         updateDockTimer();
-        function upd() { let main = document.getElementById("logBox"); if (main && modal.querySelector(".dock-log")) { modal.querySelector(".dock-log").innerHTML = main.innerHTML; } }
+        function upd() { let main = document.getElementById("logBox"); if (main && modal.querySelector(".dock-log")) { modal.querySelector(".dock-log").innerHTML = main.innerHTML; modal.querySelector(".dock-log").scrollTop = modal.querySelector(".dock-log").scrollHeight; } }
         upd();
         function showMyPlanetsModal() {
             let owned = []; for (let i = 0; i < PLANET_COUNT; i++) if (planetOwners[i] === "player") owned.push(i);
@@ -2023,6 +2044,7 @@
         }
         function showArtifactMarketModal() {
             let html = `<h3>🏺 РЫНОК АРТЕФАКТОВ</h3>`;
+            html += `<div class="balance-panel"><h4>Ваш счёт от продаж: ${player.artifactSalesBalance}💰</h4><button id="withdrawSalesBtn">Забрать прибыль</button></div>`;
             html += `<div class="trade-row"><h4>Ваши артефакты:</h4>`;
             for (let a of playerArtifacts) {
                 let art = ARTIFACTS[a.id];
@@ -2034,12 +2056,15 @@
                 let offer = artifactMarket[i];
                 let art = ARTIFACTS[offer.artifactId];
                 let seller = offer.sellerIsPlayer ? "Вы" : (bots.find(b => b.id === offer.sellerId)?.name || "Бот");
-                html += `<div class="artifact-market-item">${art.name} (осталось ${offer.usesLeft} зарядов) — Цена: ${offer.price}💰 (продавец: ${seller}) <button class="buyArtifactBtn" data-index="${i}">Купить</button></div>`;
+                html += `<div class="artifact-market-item">${art.name} (осталось ${offer.usesLeft} зарядов) — Цена: ${offer.price}💰 (продавец: ${seller}) <button class="buyArtifactBtn" data-index="${i}">Купить</button>`;
+                if (offer.sellerIsPlayer) html += ` <button class="cancelArtifactBtn" data-index="${i}">Снять с продажи</button>`;
+                html += `</div>`;
             }
             html += `<div class="modal-buttons"><button id="closeMarketBtn">Закрыть</button></div>`;
             let win = document.createElement("div"); win.className = "modal";
             win.innerHTML = `<div class="modal-content">${html}</div>`;
             document.body.appendChild(win);
+            win.querySelector("#withdrawSalesBtn").onclick = () => { withdrawArtifactSales(); win.remove(); showArtifactMarketModal(); };
             win.querySelectorAll(".sellArtifactBtn").forEach(btn => {
                 btn.onclick = () => {
                     let id = btn.dataset.id;
@@ -2069,19 +2094,26 @@
                     } else alert("Недостаточно кредитов или артефакт уже продан.");
                 };
             });
+            win.querySelectorAll(".cancelArtifactBtn").forEach(btn => {
+                btn.onclick = () => {
+                    let idx = parseInt(btn.dataset.index);
+                    cancelArtifactSale(idx);
+                    win.remove();
+                    showArtifactMarketModal();
+                };
+            });
             win.querySelector("#closeMarketBtn").onclick = () => win.remove();
         }
         document.getElementById("dockShopBtn").onclick = () => { openShipShopModal(); upd(); };
-        document.getElementById("dockCollectAllBtn").onclick = () => { collectAllPlanetResources(true, player); saveGame(); showMyPlanetsModal(); upd(); };
+        document.getElementById("dockCollectAllBtn").onclick = () => { collectAllPlanetResources(true, player); saveGame(); upd(); };
         document.getElementById("dockTeleportBtn").onclick = () => showTeleportModal();
         document.getElementById("dockMyPlanetsBtn").onclick = () => showMyPlanetsModal();
         document.getElementById("dockStatsBtn").onclick = () => showStatsModal();
         document.getElementById("dockMissionBtn").onclick = () => showMissionModal();
         document.getElementById("dockContrabandBtn").onclick = () => showContrabandModal();
         document.getElementById("dockArtifactMarketBtn").onclick = () => showArtifactMarketModal();
-        document.getElementById("dockMenuBtn").onclick = () => { modal.remove(); clearInterval(timerInterval); currentDockModal = null; gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); updateRankingModal(); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
+        document.getElementById("dockMenuBtn").onclick = () => { modal.remove(); clearInterval(timerInterval); currentDockModal = null; gameActive = false; if (botInterval) clearInterval(botInterval); if (botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display = "block"; document.getElementById("gameScreen").classList.add("hidden"); document.getElementById("continueBtn").disabled = player.isDead; document.getElementById("newGameBtn").disabled = !player.isDead; saveGame(); };
         document.getElementById("closeDockBtn").onclick = () => { modal.remove(); clearInterval(timerInterval); currentDockModal = null; exitDockToRandom(); };
-        showMyPlanetsModal();
     }
     function exitDockToRandom() {
         player.inDock = false; player.dockEnterTime = 0;
@@ -2121,7 +2153,7 @@
         planetStocks = initStocks(); planetPrices = []; for (let i = 0; i < PLANET_COUNT; i++) planetPrices[i] = generatePricesForPlanet(i + 1, Date.now());
         lastPriceUpdate = Date.now(); lastMissionUpdate = Date.now(); bots = []; nextBotId = 100; initPlanets();
         for (let i = 0; i < MAX_LEVEL1_BOTS; i++) createBot(1, 0);
-        player = { credits: START_CREDITS, cargo: {}, wins: 0, level: 1, shipLevel: 1, currentPlanet: Math.floor(Math.random() * PLANET_COUNT) + 1, fuel: getShip(1).fuelCap, strangePower: START_STRANGE_POWER, darkMatter: 0, hull: 100, isDead: false, immunityUntil: Date.now() + IMMUNITY_DURATION, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false, inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0, luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false, lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null };
+        player = { credits: START_CREDITS, cargo: {}, wins: 0, level: 1, shipLevel: 1, currentPlanet: Math.floor(Math.random() * PLANET_COUNT) + 1, fuel: getShip(1).fuelCap, strangePower: START_STRANGE_POWER, darkMatter: 0, hull: 100, isDead: false, immunityUntil: Date.now() + IMMUNITY_DURATION, hasTMHarvester: false, hasSSGenerator: false, hasOptimizer: false, inDock: false, dockEnterTime: 0, missionsCompleted: 0, stealthRemaining: 0, luckBoostRemaining: 0, battleBuffRemaining: 0, ignoreLevelOnce: false, lastMissionBonus10: 0, lastMissionBonus100: 0, contrabandRating: 50, contrabandMission: null, artifactSalesBalance: 0 };
         ALL_GOODS.forEach(g => player.cargo[g.id] = 0); playerArtifacts = [];
         currentMission = null; missionCompleted = false; currentContrabandMission = null; lastContrabandUpdate = Date.now(); mineralPriceMultipliers = MINERALS.map(() => 0.8 + Math.random() * 0.4);
         generateContrabandOffers();
