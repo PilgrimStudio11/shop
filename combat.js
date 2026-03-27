@@ -1,16 +1,16 @@
 // combat.js – бои, расчёт силы, артефакты в бою
 
-import { CONFIG } from './config.js';
+import { CONFIG, SHIPS } from './config.js';
 import { player, getShip as getPlayerShip, getTotalPower as getPlayerTotalPower, useArtifact, hasArtifact, updatePlayerLevel } from './player.js';
 import { addLogToGame, saveGame } from './utils.js';
 import { removeBot } from './bots.js';
 import { planetOwners, planetModules, planetIncome, planetTM, planetMinerIncome } from './planets.js';
 
 function getShip(entity) {
-    return window.SHIPS[entity.shipLevel - 1];
+    return SHIPS[entity.shipLevel - 1];
 }
 
-function getTotalPower(entity) {
+export function getEntityPower(entity) {
     const ship = getShip(entity);
     const rocketBonus = (entity.cargo.rockets || 0) * CONFIG.ROCKET_POWER;
     const tmBonus = (entity.darkMatter || 0) * CONFIG.TM_POWER;
@@ -23,8 +23,8 @@ function getTotalPower(entity) {
 }
 
 export function resolveCombat(attacker, defender, isPlayerAttacker, eventFight = false) {
-    const powerA = getTotalPower(attacker);
-    const powerD = getTotalPower(defender);
+    const powerA = getEntityPower(attacker);
+    const powerD = getEntityPower(defender);
     if (powerA < powerD) {
         addLogToGame(`Ошибка: атакующий (${attacker.name}) слабее защитника (${defender.name})!`, "warning", isPlayerAttacker);
         return false;
@@ -166,6 +166,10 @@ export function resolveCombat(attacker, defender, isPlayerAttacker, eventFight =
     return true;
 }
 
+function randomRange(min, max) {
+    return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
 export function fightWithBot(bot, eventFight = false) {
     if (player.isDead) return;
     autoActivateArtifacts(bot, false);
@@ -239,7 +243,7 @@ function autoActivateArtifacts(entity, isPlayer) {
         }
         if (hasArtifact(player.artifacts, "tempMask")) {
             const playerPower = getPlayerTotalPower();
-            const botPower = getTotalPower(entity);
+            const botPower = getEntityPower(entity);
             if (botPower > playerPower * (1 + CONFIG.BOT_ATTACK_THRESHOLD) && entity.hull > 50) {
                 if (useArtifact(player.artifacts, "tempMask")) {
                     player.stealthRemaining = 10;
@@ -258,7 +262,7 @@ function autoActivateArtifacts(entity, isPlayer) {
         }
         if (hasArtifact(entity.artifacts, "tempMask")) {
             const playerPower = getPlayerTotalPower();
-            const botPower = getTotalPower(entity);
+            const botPower = getEntityPower(entity);
             if (botPower > playerPower * (1 + CONFIG.BOT_ATTACK_THRESHOLD) && entity.hull > 50) {
                 if (useArtifact(entity.artifacts, "tempMask")) {
                     entity.stealthRemaining = 10;
@@ -288,7 +292,7 @@ export function encounterWithBots() {
     }
     const modal = document.createElement("div");
     modal.className = "modal";
-    modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${getTotalPower(bot).toFixed(2)}</p><p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>Ваша сила: ${getPlayerTotalPower().toFixed(2)}</p>${player.ignoreLevelOnce ? '<p>✨ Амулет превосходства активен! Вы можете атаковать любого противника.</p>' : ''}${bot.ignoreLevelOnce ? '<p>✨ У бота активен Амулет превосходства!</p>' : ''}<div class="modal-buttons"><button id="attackBtn">⚔️ АТАКОВАТЬ</button><button id="retreatBtn">🏃 ОТСТУПИТЬ (${CONFIG.RETREAT_COST}💰)</button></div></div>`;
+    modal.innerHTML = `<div class="modal-content"><h3>Встреча с ${bot.name}</h3><p>Уровень ${bot.level}, сила ${getEntityPower(bot).toFixed(2)}</p><p>💰 Кредиты бота: ${Math.floor(bot.credits)}</p><p>Ваша сила: ${getPlayerTotalPower().toFixed(2)}</p>${player.ignoreLevelOnce ? '<p>✨ Амулет превосходства активен! Вы можете атаковать любого противника.</p>' : ''}${bot.ignoreLevelOnce ? '<p>✨ У бота активен Амулет превосходства!</p>' : ''}<div class="modal-buttons"><button id="attackBtn">⚔️ АТАКОВАТЬ</button><button id="retreatBtn">🏃 ОТСТУПИТЬ (${CONFIG.RETREAT_COST}💰)</button></div></div>`;
     document.body.appendChild(modal);
     modal.querySelector("#attackBtn").onclick = () => { modal.remove(); fightWithBot(bot); };
     modal.querySelector("#retreatBtn").onclick = () => {
