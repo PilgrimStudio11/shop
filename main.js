@@ -1,7 +1,7 @@
 // main.js – точка входа, инициализация, таймеры, обработчики
 
 import { CONFIG, GOODS, MINERALS, ARTIFACTS, SHIPS, MODULE_BLUEPRINTS, UPGRADE_RECIPES, COMPONENTS } from './config.js';
-import { player, initPlayer, getShip, updatePlayerLevel, getOptimizerCost, getDockCost, getTMHarvestBonus, getSSGeneratorBonus, addArtifact, useArtifact, hasArtifact } from './player.js';
+import { player, initPlayer, getShip, getOptimizerCost, getDockCost, getTMHarvestBonus, getSSGeneratorBonus, addArtifact, useArtifact, hasArtifact } from './player.js';
 import { addLogToGame, saveGame, loadGame, randomRange, gameLog } from './utils.js';
 import { move, hyperJump } from './gameCore.js';
 import { generateMission, updateMissionByTimer, currentMission, missionCompleted, onBuyGood, onSellGood, tryFindGoods, tryFindArtifact, tryFindMineral, tryFindComponent, sellMinerals } from './trade.js';
@@ -205,7 +205,7 @@ function resetWorldAndNewPlayer() {
     lastContrabandUpdate = Date.now();
     bots.length = 0;
     nextBotId = 100;
-    initPlanets();
+    initPlanets(); // Обнуляет все массивы планет, включая planetPrevOwnersCount и planetOwners
     for (let i = 0; i < CONFIG.MAX_LEVEL1_BOTS; i++) createBot(1, 0);
     initPlayer();
     player.currentPlanet = randomRange(1, CONFIG.PLANET_COUNT);
@@ -330,18 +330,15 @@ function registerPWA() {
     });
 }
 
-// Функция полной загрузки сохранения
+// Функция полной загрузки сохранения (упрощённо, но рабочий вариант)
 function loadFullGame() {
     const saved = loadGame();
     if (!saved) return false;
     try {
-        // Восстанавливаем игрока
         Object.assign(player, saved.player);
-        // Восстанавливаем ботов
         bots.length = 0;
         bots.push(...saved.bots);
         nextBotId = saved.gameState.nextBotId;
-        // Восстанавливаем планеты
         if (saved.planets) {
             for (let i = 0; i < CONFIG.PLANET_COUNT; i++) {
                 if (saved.planets.owners && saved.planets.owners[i] !== undefined) planetOwners[i] = saved.planets.owners[i];
@@ -377,7 +374,7 @@ function loadFullGame() {
 }
 
 window.onload = () => {
-    // Инициализируем базовые массивы (на случай, если сохранение не загрузится)
+    // Инициализация базовых массивов
     initPlanetData();
     initPlanets();
 
@@ -387,7 +384,7 @@ window.onload = () => {
         resetWorldAndNewPlayer();
     }
 
-    // Обновляем глобальные ссылки после загрузки
+    // Обновляем глобальные ссылки
     window.planetStocks = planetStocks;
     window.planetPrices = planetPrices;
     window.mineralPriceMultipliers = mineralPriceMultipliers;
@@ -478,7 +475,6 @@ window.onload = () => {
     if (dockBtn) dockBtn.onclick = () => openDock(false);
     if (planetCard) planetCard.onclick = () => { if (!player.isDead) openPlanetMenu(player.currentPlanet); };
 
-    // Показываем главное меню и обновляем UI
     document.getElementById("menuScreen").style.display = "block";
     if (!currentMission && !missionCompleted) generateMission();
     generateContrabandOffers();
