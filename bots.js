@@ -1,9 +1,8 @@
-// bots.js – управление ботами: создание, движение, торговля, крафт, рынки
+// bots.js – ИИ ботов
 
 import { CONFIG, GOODS, MINERALS, COMPONENTS, SHIPS, MODULE_BLUEPRINTS, UPGRADE_RECIPES } from './config.js';
 import { addLogToGame, randomRange, saveGame } from './utils.js';
-import { getTotalPower as getPlayerTotalPower } from './player.js';
-import { resolveCombat } from './combat.js';
+import { getEntityPower } from './combat.js';
 import { tryFindGoods, tryFindMineral, tryFindArtifact } from './trade.js';
 import { buyPlanet, upgradePlanetStorage, installPlanetModule, collectAllPlanetResources, getPlanetPrice, canBuyPlanet, getPlanetStorageUpgradeCost, planetOwners, planetModules, planetIncome, planetTM, planetMinerIncome } from './planets.js';
 import { listComponentForSale, buyComponent, cancelComponentSale, updateComponentPriceHistory, getAverageComponentPrice, listArtifactForSale, buyArtifact, cancelArtifactSale, updateArtifactPriceHistory, withdrawArtifactSales } from './market.js';
@@ -91,18 +90,7 @@ function getShip(bot) {
     return SHIPS[bot.shipLevel - 1];
 }
 
-function getTotalPower(bot) {
-    const ship = getShip(bot);
-    const rocketBonus = (bot.cargo.rockets || 0) * CONFIG.ROCKET_POWER;
-    const tmBonus = (bot.darkMatter || 0) * CONFIG.TM_POWER;
-    let effective = ship.power + rocketBonus + tmBonus;
-    const hullPercent = Math.max(0, bot.hull) / 100;
-    let power = effective * hullPercent;
-    if (bot.battleBuffRemaining > 0) power *= 2;
-    return power;
-}
-
-function getClosestEnemyPosition(bot) {
+export function getClosestEnemyPosition(bot) {
     const playerPos = window.player?.currentPlanet;
     if (playerPos) {
         const diff = playerPos - bot.currentPlanet;
@@ -126,7 +114,7 @@ function getClosestEnemyPosition(bot) {
     return null;
 }
 
-function botTradeAndUpgrade(bot) {
+export function botTradeAndUpgrade(bot) {
     const planetIdx = bot.currentPlanet - 1;
     const prices = window.planetPrices?.[planetIdx];
     if (!prices) return;
@@ -161,7 +149,7 @@ function botTradeAndUpgrade(bot) {
     }
 }
 
-function botTryContraband(bot) {
+export function botTryContraband(bot) {
     // Бот может взять контрабандное задание, если нет активного
     if (!bot.contrabandMission && window.activeContrabandOffers) {
         const available = window.activeContrabandOffers.filter(o => !o.completed);
@@ -382,11 +370,11 @@ function botAI() {
     }
     for (let [planet, bList] of planetsWithBots) {
         if (bList.length < 2) continue;
-        bList.sort((a,b) => getTotalPower(b) - getTotalPower(a));
+        bList.sort((a,b) => getEntityPower(b) - getEntityPower(a));
         const attacker = bList[0];
         const defender = bList[1];
-        if (getTotalPower(attacker) > getTotalPower(defender) * (1 + CONFIG.BOT_ATTACK_THRESHOLD)) {
-            resolveCombat(attacker, defender, false);
+        if (getEntityPower(attacker) > getEntityPower(defender) * (1 + CONFIG.BOT_ATTACK_THRESHOLD)) {
+            window.resolveCombat?.(attacker, defender, false);
         }
     }
 }
