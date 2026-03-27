@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Star Nomad — Звёздные войны</title>
+    <title>Star Nomad — Торговая Империя</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Star Nomad">
@@ -88,8 +88,6 @@
             <button id="importBtn">📂 ИМПОРТ</button>
             <button id="exitBtn">❌ ВЫХОД</button>
         </div>
-        <!-- Рейтинг теперь модальное окно, скрытый блок убран -->
-        <div id="rankingPanel" class="hidden"></div>
         <div id="shopPanel" class="hidden"><div class="tab-bar"><button id="tabShipsBtn" class="tab-btn active">🛸 Корабли</button><button id="tabModulesBtn" class="tab-btn">🔧 Модули</button></div><div id="shopShipsList"></div><div id="shopModulesList" class="hidden"></div><div class="modal-buttons"><button id="closeShopBtn">Закрыть</button></div></div>
     </div>
     <div id="gameScreen" class="hidden">
@@ -154,14 +152,12 @@
     const MODULE_SS_GENERATOR_COST = 50000;
     const MODULE_OPTIMIZER_COST = 50000;
     const PLANET_PRICE_BASE = 10000;
-    // Удаляем модуль усиленного сбора налогов
-    // const MODULE_PLANET_TAX_COST = 10000;
     const MODULE_PLANET_TM_LAB_COST = 10000;
     const MODULE_PLANET_STORAGE_LEVELS = [0,5000,10000,15000,20000,25000];
     const MODULE_PLANET_STORAGE_CAPACITY = [1000,2000,3000,4000,5000,6000];
     const MODULE_PLANET_MINER_COST = 10000;
     const MODULE_PLANET_TELEPORT_COST = 10000;
-    const PLANET_INCOME_PERCENT = 0.1;   // базовый процент
+    const PLANET_INCOME_PERCENT = 0.1;
     const TM_GENERATOR_RATE = 10;
     const BOT_ATTACK_THRESHOLD = 0.05;
     const RETREAT_COST = 1000;
@@ -355,7 +351,6 @@
             planetIncome[i]=0;
             planetTM[i]=0;
             planetMinerIncome[i]=0;
-            // убрали taxBoost
             planetModules[i]={ tmLaboratory:false, storageLevel:0, planetMiner:false, teleport:false };
         }
     }
@@ -370,10 +365,9 @@
         addLogToGame(`${isPlayer?"Вы":entity.name} улучшили склад на планете #${planetIdx+1} до уровня ${planetModules[planetIdx].storageLevel} (вместимость ${getPlanetMaxStorage(planetIdx)})`,"success",isPlayer);
         return true;
     }
-    // Новая функция получения процента дохода в зависимости от уровня склада
     function getPlanetIncomePercent(planetIdx){
         let level = planetModules[planetIdx].storageLevel;
-        return PLANET_INCOME_PERCENT + level * 0.05; // 0.1 + 0.05*level
+        return PLANET_INCOME_PERCENT + level * 0.05;
     }
 
     function initStocks(){ let s=[]; for(let i=0;i<PLANET_COUNT;i++){ let p={}; GOODS.forEach(g=>p[g.id]=1000); s.push(p); } return s; }
@@ -697,8 +691,6 @@
         if(totalCredits>0 || totalTM>0) addLogToGame(`${isPlayer?"Вы":entity.name} собрали ${totalCredits}💰 и ${totalTM}🌑 ТМ со всех планет.`,"success",isPlayer);
         return {credits:totalCredits, tm:totalTM};
     }
-    function collectTMFromPlanets(isPlayer,entity){ let total=0; for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]===(isPlayer?"player":entity.id) && planetModules[i].tmLaboratory){ total+=planetTM[i]; planetTM[i]=0; } if(total>0){ entity.darkMatter+=total; addLogToGame(`${isPlayer?"Вы":entity.name} собрали ${total}🌑 ТМ с генераторов`,"success",isPlayer); } return total; }
-    function collectMinerIncome(isPlayer,entity){ let total=0; for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]===(isPlayer?"player":entity.id) && planetModules[i].planetMiner){ total+=planetMinerIncome[i]; planetMinerIncome[i]=0; } if(total>0){ entity.credits+=total; addLogToGame(`${isPlayer?"Вы":entity.name} собрали ${total}💰 с добытчиков ресурсов`,"success",isPlayer); } return total; }
     function addIncomeToPlanet(planetIdx,amount){ let owner=planetOwners[planetIdx]; if(owner!==null){
         let percent = getPlanetIncomePercent(planetIdx);
         let incomeAdd = Math.floor(amount * percent);
@@ -721,7 +713,7 @@
     }
     function releaseBotPlanets(botId){ for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]===botId){ planetOwners[i]=null; planetModules[i]={tmLaboratory:false, storageLevel:0, planetMiner:false, teleport:false}; planetIncome[i]=0; planetTM[i]=0; planetMinerIncome[i]=0; } }
 
-    // Боевая система (без изменений, но с TM_POWER=0.01)
+    // Боевая система
     function resolveCombat(attacker, defender, isPlayerAttacker, eventFight = false) {
         let powerA = getTotalPower(attacker);
         let powerD = getTotalPower(defender);
@@ -1383,29 +1375,46 @@
         player.inDock=true;
         player.dockEnterTime = Date.now();
         let modal=document.createElement("div"); modal.className="modal";
-        modal.innerHTML=`<div class="modal-content" style="max-width:900px;"><h2>🚀 КОСМИЧЕСКИЙ ДОК</h2><div class="dock-panel"><div class="dock-section" style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px;"><button id="dockShopBtn">🛸 МАГАЗИН</button><button id="dockCollectAllBtn">💰 СОБРАТЬ ВЕСЬ ДОХОД</button><button id="dockTeleportBtn">🌀 ТЕЛЕПОРТ</button><button id="dockMyPlanetsBtn">📡 МОИ ПЛАНЕТЫ</button><button id="dockStatsBtn">📊 ПАРАМЕТРЫ</button><button id="dockMissionBtn">📜 ЗАДАНИЕ</button><button id="dockContrabandBtn">🎲 КОНТРАБАНДИСТ</button><button id="dockMenuBtn">🏠 ГЛАВНОЕ МЕНЮ</button><button id="closeDockBtn" style="background:#8b0000;">ВЫЙТИ ИЗ ДОКА</button></div><div id="dockContent" class="dock-section"><p>Выберите действие.</p></div><div class="dock-log"></div><div class="modal-buttons"></div></div></div>`;
+        modal.innerHTML=`<div class="modal-content" style="max-width:900px;"><h2>🚀 КОСМИЧЕСКИЙ ДОК</h2><div class="dock-panel"><div class="dock-section" style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px;">
+            <button id="dockShopBtn">🛸 МАГАЗИН</button>
+            <button id="dockCollectAllBtn">💰 СОБРАТЬ ВЕСЬ ДОХОД</button>
+            <button id="dockTeleportBtn">🌀 ТЕЛЕПОРТ</button>
+            <button id="dockMyPlanetsBtn">📡 МОИ ПЛАНЕТЫ</button>
+            <button id="dockStatsBtn">📊 ПАРАМЕТРЫ</button>
+            <button id="dockMissionBtn">📜 ЗАДАНИЕ</button>
+            <button id="dockContrabandBtn">🎲 КОНТРАБАНДИСТ</button>
+            <button id="dockMenuBtn">🏠 ГЛАВНОЕ МЕНЮ</button>
+            <button id="closeDockBtn" style="background:#8b0000;">ВЫЙТИ ИЗ ДОКА</button>
+        </div><div id="dockContent" class="dock-section"><p>Выберите действие.</p></div><div class="dock-log"></div><div class="modal-buttons"></div></div></div>`;
         document.body.appendChild(modal); currentDockModal=modal;
         function upd(){ let main=document.getElementById("logBox"); if(main&&modal.querySelector(".dock-log")){ modal.querySelector(".dock-log").innerHTML=main.innerHTML; modal.querySelector(".dock-log").scrollTop=modal.querySelector(".dock-log").scrollHeight; } }
         upd();
-        function showMyPlanets(){
+        function showMyPlanetsModal(){
             let owned=[]; for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]==="player") owned.push(i);
-            if(owned.length===0){ document.getElementById("dockContent").innerHTML="<p>У вас нет планет.</p>"; return; }
+            if(owned.length===0){ alert("У вас нет планет."); return; }
             let html="<h3>Ваши планеты</h3>";
             for(let idx of owned){ let m=planetModules[idx]; let incomePercent = getPlanetIncomePercent(idx); html+=`<div class="planet-list-item"><div><b>#${idx+1}</b> | 💰${planetIncome[idx]} | 🌑${planetTM[idx]} | ⛏️${planetMinerIncome[idx]}<br>Склад ур.${m.storageLevel} (вместимость ${getPlanetMaxStorage(idx)}, доход ${Math.round(incomePercent*100)}%)<br>${m.tmLaboratory?"🧪ТМ ":""}${m.planetMiner?"⛏️Майнер ":""}${m.teleport?"🌀Телепорт ":""}</div><div class="inline-buttons"><button class="collectIncomeOne" data-idx="${idx}">Собрать💰</button><button class="collectTMOne" data-idx="${idx}">Собрать🌑</button><button class="collectMinerOne" data-idx="${idx}">Собрать⛏️</button><button class="upgradeStorage" data-idx="${idx}" ${getPlanetStorageUpgradeCost(idx)? "":"disabled"}>Улучшить склад (${getPlanetStorageUpgradeCost(idx)||0}💰)</button></div></div>`; }
-            document.getElementById("dockContent").innerHTML=html;
-            document.querySelectorAll(".collectIncomeOne").forEach(btn=>{ btn.onclick=()=>{ collectPlanetIncome(parseInt(btn.dataset.idx),true,player); saveGame(); showMyPlanets(); upd(); }; });
-            document.querySelectorAll(".collectTMOne").forEach(btn=>{ btn.onclick=()=>{ let idx=parseInt(btn.dataset.idx); let amount=planetTM[idx]; if(amount>0){ player.darkMatter+=amount; planetTM[idx]=0; addLogToGame(`Собрали ${amount}🌑 ТМ с планеты #${idx+1}`,"success",true); saveGame(); showMyPlanets(); upd(); } }; });
-            document.querySelectorAll(".collectMinerOne").forEach(btn=>{ btn.onclick=()=>{ let idx=parseInt(btn.dataset.idx); let amount=planetMinerIncome[idx]; if(amount>0){ player.credits+=amount; planetMinerIncome[idx]=0; addLogToGame(`Собрали ${amount}💰 с добытчика ресурсов на планете #${idx+1}`,"success",true); saveGame(); showMyPlanets(); upd(); } }; });
-            document.querySelectorAll(".upgradeStorage").forEach(btn=>{ if(!btn.disabled) btn.onclick=()=>{ upgradePlanetStorage(parseInt(btn.dataset.idx),true,player); saveGame(); showMyPlanets(); upd(); }; });
+            let modalWin=document.createElement("div"); modalWin.className="modal";
+            modalWin.innerHTML=`<div class="modal-content">${html}<div class="modal-buttons"><button id="closePlanetsBtn">Закрыть</button></div></div>`;
+            document.body.appendChild(modalWin);
+            modalWin.querySelectorAll(".collectIncomeOne").forEach(btn=>{ btn.onclick=()=>{ collectPlanetIncome(parseInt(btn.dataset.idx),true,player); saveGame(); showMyPlanetsModal(); upd(); modalWin.remove(); }; });
+            modalWin.querySelectorAll(".collectTMOne").forEach(btn=>{ btn.onclick=()=>{ let idx=parseInt(btn.dataset.idx); let amount=planetTM[idx]; if(amount>0){ player.darkMatter+=amount; planetTM[idx]=0; addLogToGame(`Собрали ${amount}🌑 ТМ с планеты #${idx+1}`,"success",true); saveGame(); showMyPlanetsModal(); upd(); modalWin.remove(); } }; });
+            modalWin.querySelectorAll(".collectMinerOne").forEach(btn=>{ btn.onclick=()=>{ let idx=parseInt(btn.dataset.idx); let amount=planetMinerIncome[idx]; if(amount>0){ player.credits+=amount; planetMinerIncome[idx]=0; addLogToGame(`Собрали ${amount}💰 с добытчика ресурсов на планете #${idx+1}`,"success",true); saveGame(); showMyPlanetsModal(); upd(); modalWin.remove(); } }; });
+            modalWin.querySelectorAll(".upgradeStorage").forEach(btn=>{ if(!btn.disabled) btn.onclick=()=>{ upgradePlanetStorage(parseInt(btn.dataset.idx),true,player); saveGame(); showMyPlanetsModal(); upd(); modalWin.remove(); }; });
+            modalWin.querySelector("#closePlanetsBtn").onclick=()=>modalWin.remove();
         }
-        function showTeleport(){
+        function showTeleportModal(){
             let teleports=[]; for(let i=0;i<PLANET_COUNT;i++) if(planetOwners[i]==="player" && planetModules[i].teleport) teleports.push(i);
-            if(teleports.length===0){ document.getElementById("dockContent").innerHTML="<p>Нет планет с телепортом.</p>"; return; }
-            let html="<h3>Телепортация</h3>"; for(let idx of teleports) html+=`<button class="teleportBtn" data-idx="${idx}">Телепорт на планету #${idx+1}</button> `;
-            document.getElementById("dockContent").innerHTML=html;
-            document.querySelectorAll(".teleportBtn").forEach(btn=>{ btn.onclick=()=>{ let target=parseInt(btn.dataset.idx); player.currentPlanet=target+1; addLogToGame(`Телепортация на планету #${target+1}`,"success",true); saveGame(); modal.remove(); currentDockModal=null; player.inDock=false; updateUI(); }; });
+            if(teleports.length===0){ alert("Нет планет с телепортом."); return; }
+            let html="<h3>Телепортация</h3>";
+            for(let idx of teleports) html+=`<button class="teleportBtn" data-idx="${idx}">Телепорт на планету #${idx+1}</button><br>`;
+            let modalWin=document.createElement("div"); modalWin.className="modal";
+            modalWin.innerHTML=`<div class="modal-content">${html}<div class="modal-buttons"><button id="cancelTeleport">Отмена</button></div></div>`;
+            document.body.appendChild(modalWin);
+            modalWin.querySelectorAll(".teleportBtn").forEach(btn=>{ btn.onclick=()=>{ let target=parseInt(btn.dataset.idx); player.currentPlanet=target+1; addLogToGame(`Телепортация на планету #${target+1}`,"success",true); saveGame(); updateUI(); modalWin.remove(); if(currentDockModal) currentDockModal.remove(); player.inDock=false; }; });
+            modalWin.querySelector("#cancelTeleport").onclick=()=>modalWin.remove();
         }
-        function showContraband(){
+        function showContrabandModal(){
             let html=`<h3>🎲 Контрабандист</h3><p>Ваш рейтинг: ${player.contrabandRating} (влияет на цену минералов и награду)</p><button id="sellMineralsBtn">Продать редкие минералы</button>`;
             if(currentContrabandMission && !currentContrabandMission.completed){
                 html+=`<p>Текущее задание: забрать груз на #${currentContrabandMission.fromPlanet}, доставить на #${currentContrabandMission.toPlanet}. Базовая награда: ${currentContrabandMission.rewardBase}💰</p>`;
@@ -1417,27 +1426,42 @@
             } else {
                 html+=`<p>Нет активного контрабандного задания. Следующее через ${Math.max(0,Math.ceil((lastContrabandUpdate+CONTRABAND_MISSION_COOLDOWN-Date.now())/1000/60))} минут.</p>`;
             }
-            document.getElementById("dockContent").innerHTML=html;
-            let sellBtn=document.getElementById("sellMineralsBtn"); if(sellBtn) sellBtn.onclick=()=>sellMinerals();
-            let takeBtn=document.getElementById("takeContrabandFromDockBtn"); if(takeBtn) takeBtn.onclick=()=>{ takeContraband(); showContraband(); };
+            let modalWin=document.createElement("div"); modalWin.className="modal";
+            modalWin.innerHTML=`<div class="modal-content">${html}<div class="modal-buttons"><button id="closeContrabandBtn">Закрыть</button></div></div>`;
+            document.body.appendChild(modalWin);
+            let sellBtn=modalWin.querySelector("#sellMineralsBtn"); if(sellBtn) sellBtn.onclick=()=>{ sellMinerals(); modalWin.remove(); };
+            let takeBtn=modalWin.querySelector("#takeContrabandFromDockBtn"); if(takeBtn) takeBtn.onclick=()=>{ takeContraband(); modalWin.remove(); };
+            modalWin.querySelector("#closeContrabandBtn").onclick=()=>modalWin.remove();
         }
-        function showStats(){
+        function showStatsModal(){
             let ship=getShip(player.shipLevel);
             let mineralsList = MINERALS.filter(m=>player.cargo[m.id]).map(m=>`${m.name}: ${player.cargo[m.id]}`).join(", ") || "нет";
             let artifactsList = playerArtifacts.map(a=>`${ARTIFACTS[a.id].name} x${a.count}`).join(", ") || "нет";
             let html=`<div class="balance-panel"><h4>📊 Баланс пилота</h4><div class="balance-item">💰 Кредиты: ${Math.floor(player.credits)}</div><div class="balance-item">🌀 СС: ${player.strangePower}</div><div class="balance-item">🌑 ТМ: ${player.darkMatter}</div><div class="balance-item">📦 Груз: ${Object.values(player.cargo).reduce((a,b)=>a+b,0)}/${ship.cargo}</div><div class="balance-item">💎 Минералы: ${mineralsList}</div><div class="balance-item">✨ Артефакты: ${artifactsList}</div><div class="balance-item">⭐ Уровень: ${player.level} (побед: ${player.wins})</div><div class="balance-item">🛡️ Прочность: ${Math.floor(player.hull)}%</div><div class="balance-item">📜 Заданий выполнено: ${player.missionsCompleted}</div><div class="balance-item">🎲 Рейтинг контрабандиста: ${player.contrabandRating}</div></div>`;
-            document.getElementById("dockContent").innerHTML=html;
+            let modalWin=document.createElement("div"); modalWin.className="modal";
+            modalWin.innerHTML=`<div class="modal-content">${html}<div class="modal-buttons"><button id="closeStatsBtn">Закрыть</button></div></div>`;
+            document.body.appendChild(modalWin);
+            modalWin.querySelector("#closeStatsBtn").onclick=()=>modalWin.remove();
+        }
+        function showMissionModal(){
+            let text="Нет задания";
+            if(currentMission&&!currentMission.completed) text=`📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType==="credits"?"💰":"🌑 ТМ"}`;
+            else if(currentMission&&currentMission.completed) text="✅ Задание выполнено.";
+            let modalWin=document.createElement("div"); modalWin.className="modal";
+            modalWin.innerHTML=`<div class="modal-content"><p>${text}</p><div class="modal-buttons"><button id="closeMissionBtn">Закрыть</button></div></div>`;
+            document.body.appendChild(modalWin);
+            modalWin.querySelector("#closeMissionBtn").onclick=()=>modalWin.remove();
         }
         document.getElementById("dockShopBtn").onclick=()=>{ openShipShopModal(); upd(); };
-        document.getElementById("dockCollectAllBtn").onclick=()=>{ collectAllPlanetResources(true,player); saveGame(); showMyPlanets(); upd(); };
-        document.getElementById("dockTeleportBtn").onclick=()=>showTeleport();
-        document.getElementById("dockMyPlanetsBtn").onclick=()=>showMyPlanets();
-        document.getElementById("dockStatsBtn").onclick=()=>showStats();
-        document.getElementById("dockMissionBtn").onclick=()=>{ let text="Нет задания"; if(currentMission&&!currentMission.completed) text=`📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType==="credits"?"💰":"🌑 ТМ"}`; else if(currentMission&&currentMission.completed) text="✅ Задание выполнено."; document.getElementById("dockContent").innerHTML=`<p>${text}</p>`; };
-        document.getElementById("dockContrabandBtn").onclick=()=>showContraband();
+        document.getElementById("dockCollectAllBtn").onclick=()=>{ collectAllPlanetResources(true,player); saveGame(); showMyPlanetsModal(); upd(); };
+        document.getElementById("dockTeleportBtn").onclick=()=>showTeleportModal();
+        document.getElementById("dockMyPlanetsBtn").onclick=()=>showMyPlanetsModal();
+        document.getElementById("dockStatsBtn").onclick=()=>showStatsModal();
+        document.getElementById("dockMissionBtn").onclick=()=>showMissionModal();
+        document.getElementById("dockContrabandBtn").onclick=()=>showContrabandModal();
         document.getElementById("dockMenuBtn").onclick=()=>{ modal.remove(); currentDockModal=null; gameActive=false; if(botInterval) clearInterval(botInterval); if(botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display="block"; document.getElementById("gameScreen").classList.add("hidden"); updateRankingModal(); document.getElementById("continueBtn").disabled=player.isDead; document.getElementById("newGameBtn").disabled=!player.isDead; saveGame(); };
         document.getElementById("closeDockBtn").onclick=()=>{ modal.remove(); currentDockModal=null; exitDockToRandom(); };
-        showMyPlanets();
+        showMyPlanetsModal();
     }
     function exitDockToRandom(){
         if(currentDockModal) currentDockModal.remove();
@@ -1706,35 +1730,90 @@
         document.getElementById("installPwaBtn").addEventListener("click",()=>{ if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; document.getElementById("pwaInstallBanner").classList.add("hidden"); }); } else alert("Нажмите «Поделиться» → «На экран «Домой»» в Safari."); });
     }
 
-    window.onload=()=>{
-        if(!loadGame()) resetWorldAndNewPlayer();
-        let lastSaveTime=localStorage.getItem("starNomadFullLastTime");
-        if(lastSaveTime){
-            let timePassed=Date.now()-parseInt(lastSaveTime);
-            if(timePassed>0 && timePassed<12*60*60*1000) simulateTimePassed(timePassed);
+    // Основная инициализация
+    window.onload = () => {
+        // Загружаем игру или создаём новый мир
+        if (!loadGame()) {
+            resetWorldAndNewPlayer();
+        } else {
+            // Симуляцию пропущенного времени запускаем асинхронно, чтобы не блокировать UI
+            let lastSaveTime = localStorage.getItem("starNomadFullLastTime");
+            if (lastSaveTime) {
+                let timePassed = Date.now() - parseInt(lastSaveTime);
+                if (timePassed > 0 && timePassed < 12 * 60 * 60 * 1000) {
+                    setTimeout(() => simulateTimePassed(timePassed), 100);
+                }
+            }
         }
-        localStorage.setItem("starNomadFullLastTime",Date.now().toString());
-        document.getElementById("continueBtn").disabled=player.isDead;
-        document.getElementById("newGameBtn").disabled=!player.isDead;
-        document.getElementById("continueBtn").onclick=()=>startGame();
-        document.getElementById("newGameBtn").onclick=()=>{ if(!player.isDead){ alert("Новая игра только после гибели."); return; } createNewPlayerInCurrentWorld(); player.isDead=false; document.getElementById("continueBtn").disabled=false; document.getElementById("newGameBtn").disabled=true; updateRankingModal(); if(gameActive){ gameActive=false; if(botInterval) clearInterval(botInterval); if(botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display="block"; document.getElementById("gameScreen").classList.add("hidden"); } };
-        document.getElementById("resetWorldBtn").onclick=()=>resetWorld();
-        document.getElementById("shopBtn").onclick=()=>openShipShopModal();
-        document.getElementById("rankingBtn").onclick=()=>updateRankingModal();
-        document.getElementById("infoBtn").onclick=()=>showInfoModal();
-        document.getElementById("exportBtn").onclick=()=>exportSave();
-        document.getElementById("importBtn").onclick=()=>importSave();
-        document.getElementById("exitBtn").onclick=()=>{ saveGame(); alert("Игра сохранена."); };
-        document.getElementById("leftBtn").onclick=()=>move(-1);
-        document.getElementById("rightBtn").onclick=()=>move(1);
-        document.getElementById("hyperLeftBtn").onclick=()=>hyperJump(-1);
-        document.getElementById("hyperRightBtn").onclick=()=>hyperJump(1);
-        document.getElementById("menuBtn").onclick=()=>{ gameActive=false; if(botInterval) clearInterval(botInterval); if(botCreationTimeout) clearTimeout(botCreationTimeout); document.getElementById("menuScreen").style.display="block"; document.getElementById("gameScreen").classList.add("hidden"); updateRankingModal(); document.getElementById("continueBtn").disabled=player.isDead; document.getElementById("newGameBtn").disabled=!player.isDead; saveGame(); };
-        document.getElementById("dockBtn").onclick=()=>openDock(false);
-        document.getElementById("currentPlanetCard").onclick=()=>{ if(!player.isDead) openPlanetMenu(player.currentPlanet); };
-        document.getElementById("menuScreen").style.display="block";
-        setInterval(()=>{ if(document.getElementById("rankingPanel")?.classList.contains("hidden")) updateRankingModal(); },10000);
-        if(!currentMission&&!missionCompleted) generateMission();
+        localStorage.setItem("starNomadFullLastTime", Date.now().toString());
+
+        // Настройка кнопок главного меню
+        const continueBtn = document.getElementById("continueBtn");
+        const newGameBtn = document.getElementById("newGameBtn");
+        const resetWorldBtn = document.getElementById("resetWorldBtn");
+        const shopBtn = document.getElementById("shopBtn");
+        const rankingBtn = document.getElementById("rankingBtn");
+        const infoBtn = document.getElementById("infoBtn");
+        const exportBtn = document.getElementById("exportBtn");
+        const importBtn = document.getElementById("importBtn");
+        const exitBtn = document.getElementById("exitBtn");
+
+        continueBtn.onclick = () => startGame();
+        newGameBtn.onclick = () => {
+            if (!player.isDead) {
+                alert("Новая игра только после гибели.");
+                return;
+            }
+            createNewPlayerInCurrentWorld();
+            player.isDead = false;
+            continueBtn.disabled = false;
+            newGameBtn.disabled = true;
+            updateRankingModal();
+            if (gameActive) {
+                gameActive = false;
+                if (botInterval) clearInterval(botInterval);
+                if (botCreationTimeout) clearTimeout(botCreationTimeout);
+                document.getElementById("menuScreen").style.display = "block";
+                document.getElementById("gameScreen").classList.add("hidden");
+            }
+        };
+        resetWorldBtn.onclick = () => resetWorld();
+        shopBtn.onclick = () => openShipShopModal();
+        rankingBtn.onclick = () => updateRankingModal();
+        infoBtn.onclick = () => showInfoModal();
+        exportBtn.onclick = () => exportSave();
+        importBtn.onclick = () => importSave();
+        exitBtn.onclick = () => {
+            saveGame();
+            alert("Игра сохранена.");
+        };
+
+        // Кнопки в игре (они будут активны после старта)
+        document.getElementById("leftBtn").onclick = () => move(-1);
+        document.getElementById("rightBtn").onclick = () => move(1);
+        document.getElementById("hyperLeftBtn").onclick = () => hyperJump(-1);
+        document.getElementById("hyperRightBtn").onclick = () => hyperJump(1);
+        document.getElementById("menuBtn").onclick = () => {
+            gameActive = false;
+            if (botInterval) clearInterval(botInterval);
+            if (botCreationTimeout) clearTimeout(botCreationTimeout);
+            document.getElementById("menuScreen").style.display = "block";
+            document.getElementById("gameScreen").classList.add("hidden");
+            updateRankingModal();
+            continueBtn.disabled = player.isDead;
+            newGameBtn.disabled = !player.isDead;
+            saveGame();
+        };
+        document.getElementById("dockBtn").onclick = () => openDock(false);
+        document.getElementById("currentPlanetCard").onclick = () => {
+            if (!player.isDead) openPlanetMenu(player.currentPlanet);
+        };
+
+        document.getElementById("menuScreen").style.display = "block";
+        // Обновляем состояние кнопок
+        continueBtn.disabled = player.isDead;
+        newGameBtn.disabled = !player.isDead;
+        if (!currentMission && !missionCompleted) generateMission();
         updateContrabandMission();
         registerPWA();
     };
