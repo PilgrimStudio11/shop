@@ -419,21 +419,348 @@ export function openDock(restore = false) {
     }
     updateDockLog();
 
-    // Внутренние функции для окон (для краткости опущены, но они идентичны тем, что были в исходном коде)
-    // Здесь должны быть определения showMyPlanetsModal, showTeleportModal, showStatsModal, showMissionModal, showContrabandModal, showArtifactMarketModal, showComponentMarketModal, showCraftModal
-    // В полной версии они уже есть в предыдущих ответах. Для экономии места я не буду их повторять, но в рабочем файле они должны быть.
-    // Предполагается, что эти функции уже определены ранее в этом файле (в предыдущих версиях они были).
+    // ---- ВНУТРЕННИЕ МОДАЛЬНЫЕ ОКНА ДОКА ----
+    function showMyPlanetsModal() {
+        const owned = [];
+        for (let i = 0; i < CONFIG.PLANET_COUNT; i++) if (planetOwners[i] === "player") owned.push(i);
+        if (owned.length === 0) { alert("У вас нет планет."); return; }
+        let html = "<h3>Ваши планеты</h3>";
+        for (let idx of owned) {
+            const m = planetModules[idx];
+            const incomePercent = getPlanetIncomePercent(idx);
+            html += `<div class="planet-list-item"><div><b>#${idx + 1}</b> | 💰${planetIncome[idx]} | 🌑${planetTM[idx]} | ⛏️${planetMinerIncome[idx]}<br>Склад ур.${m.storageLevel} (вместимость ${getPlanetMaxStorage(idx)}, доход ${Math.round(incomePercent * 100)}%)<br>${m.tmLaboratory ? "🧪ТМ " : ""}${m.planetMiner ? "⛏️Майнер " : ""}${m.teleport ? "🌀Телепорт " : ""}</div><div class="inline-buttons"><button class="collectIncomeOne" data-idx="${idx}">Собрать💰</button><button class="collectTMOne" data-idx="${idx}">Собрать🌑</button><button class="collectMinerOne" data-idx="${idx}">Собрать⛏️</button><button class="upgradeStorage" data-idx="${idx}" ${getPlanetStorageUpgradeCost(idx) ? "" : "disabled"}>Улучшить склад (${getPlanetStorageUpgradeCost(idx) || 0}💰)</button></div></div>`;
+        }
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}<div class="modal-buttons"><button id="closePlanetsBtn">Закрыть</button></div></div>`;
+        document.body.appendChild(win);
+        win.querySelectorAll(".collectIncomeOne").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.idx);
+                const amount = planetIncome[idx];
+                if (amount > 0) { player.credits += amount; planetIncome[idx] = 0; addLogToGame(`Собрали ${amount}💰 с планеты #${idx+1}`, "success", true); saveGame(); updateUI(); win.remove(); showMyPlanetsModal(); }
+            };
+        });
+        win.querySelectorAll(".collectTMOne").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.idx);
+                const amount = planetTM[idx];
+                if (amount > 0) { player.darkMatter += amount; planetTM[idx] = 0; addLogToGame(`Собрали ${amount}🌑 ТМ с планеты #${idx+1}`, "success", true); saveGame(); updateUI(); win.remove(); showMyPlanetsModal(); }
+            };
+        });
+        win.querySelectorAll(".collectMinerOne").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.idx);
+                const amount = planetMinerIncome[idx];
+                if (amount > 0) { player.credits += amount; planetMinerIncome[idx] = 0; addLogToGame(`Собрали ${amount}💰 с добытчика ресурсов на планете #${idx+1}`, "success", true); saveGame(); updateUI(); win.remove(); showMyPlanetsModal(); }
+            };
+        });
+        win.querySelectorAll(".upgradeStorage").forEach(btn => {
+            if (!btn.disabled) btn.onclick = () => {
+                const idx = parseInt(btn.dataset.idx);
+                if (upgradePlanetStorage(idx, true, player)) { saveGame(); win.remove(); showMyPlanetsModal(); updateUI(); }
+            };
+        });
+        win.querySelector("#closePlanetsBtn").onclick = () => win.remove();
+    }
 
-    // Для демонстрации я добавлю минимальные заглушки, но в реальном коде они должны быть полными.
-    function showMyPlanetsModal() { /* реализация из предыдущих версий */ }
-    function showTeleportModal() { /* реализация */ }
-    function showStatsModal() { /* реализация */ }
-    function showMissionModal() { /* реализация */ }
-    function showContrabandModal() { /* реализация */ }
-    function showArtifactMarketModal() { /* реализация */ }
-    function showComponentMarketModal() { /* реализация */ }
-    function showCraftModal() { /* реализация */ }
+    function showTeleportModal() {
+        const teleports = [];
+        for (let i = 0; i < CONFIG.PLANET_COUNT; i++) if (planetOwners[i] === "player" && planetModules[i].teleport) teleports.push(i);
+        if (teleports.length === 0) { alert("Нет планет с телепортом."); return; }
+        let html = "<h3>Телепортация</h3>";
+        for (let idx of teleports) html += `<button class="teleportBtn" data-idx="${idx}">Телепорт на планету #${idx + 1}</button><br>`;
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}<div class="modal-buttons"><button id="cancelTeleport">Отмена</button></div></div>`;
+        document.body.appendChild(win);
+        win.querySelectorAll(".teleportBtn").forEach(btn => {
+            btn.onclick = () => {
+                const target = parseInt(btn.dataset.idx);
+                player.currentPlanet = target + 1;
+                addLogToGame(`Телепортация на планету #${target + 1}`, "success", true);
+                saveGame();
+                updateUI();
+                win.remove();
+                modal.remove(); // закрываем док
+                player.inDock = false;
+            };
+        });
+        win.querySelector("#cancelTeleport").onclick = () => win.remove();
+    }
 
+    function showStatsModal() {
+        const ship = getShip();
+        const mineralsList = MINERALS.filter(m => player.cargo[m.id]).map(m => `${m.name}: ${player.cargo[m.id]}`).join(", ") || "нет";
+        const artifactsList = player.artifacts.map(a => `${ARTIFACTS[a.id].name} x${a.count}`).join(", ") || "нет";
+        const componentsList = COMPONENTS.filter(c => player.components[c.id]).map(c => `${c.name}: ${player.components[c.id]}`).join(", ") || "нет";
+        const html = `<div class="balance-panel"><h4>📊 Баланс пилота</h4><div>💰 Кредиты: ${Math.floor(player.credits)}</div><div>🌀 СС: ${player.strangePower}</div><div>🌑 ТМ: ${player.darkMatter}</div><div>📦 Груз: ${Object.values(player.cargo).reduce((a,b)=>a+b,0)}/${ship.cargo}</div><div>💎 Минералы: ${mineralsList}</div><div>🔧 Компоненты: ${componentsList}</div><div>✨ Артефакты: ${artifactsList}</div><div>⭐ Уровень: ${player.level} (побед: ${player.wins})</div><div>🛡️ Прочность: ${Math.floor(player.hull)}%</div><div>📜 Заданий выполнено: ${player.missionsCompleted}</div><div>🎲 Рейтинг контрабандиста: ${player.contrabandRating}</div><div>💰 Счёт продаж: ${player.artifactSalesBalance}</div></div>`;
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}<div class="modal-buttons"><button id="closeStatsBtn">Закрыть</button></div></div>`;
+        document.body.appendChild(win);
+        win.querySelector("#closeStatsBtn").onclick = () => win.remove();
+    }
+
+    function showMissionModal() {
+        let text = "Нет задания";
+        if (currentMission && !currentMission.completed) text = `📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought || 0}/${currentMission.qty}, продано ${currentMission.sold || 0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType === "credits" ? "💰" : "🌑 ТМ"}`;
+        else if (currentMission && currentMission.completed) text = "✅ Задание выполнено.";
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content"><p>${text}</p><div class="modal-buttons"><button id="closeMissionBtn">Закрыть</button></div></div>`;
+        document.body.appendChild(win);
+        win.querySelector("#closeMissionBtn").onclick = () => win.remove();
+    }
+
+    function showContrabandModal() {
+        let html = `<h3>🎲 Контрабандист</h3><p>Ваш рейтинг: ${player.contrabandRating} (влияет на цену минералов и награду)</p><button id="sellMineralsBtn">Продать редкие минералы</button>`;
+        if (activeContrabandOffers && activeContrabandOffers.length) {
+            html += `<div class="trade-row"><h4>Доступные задания (можно взять в любом месте):</h4>`;
+            for (let i = 0; i < activeContrabandOffers.length; i++) {
+                const offer = activeContrabandOffers[i];
+                if (!offer.completed) {
+                    const rewardTypeName = offer.rewardType === "credits" ? "💰" : "🌑 ТМ";
+                    html += `<button class="takeContrabandOfferDockBtn" data-offer="${i}">Уровень ${offer.level}: забрать груз на #${offer.fromPlanet}, доставить на #${offer.toPlanet}. Награда: ${offer.rewardBase}${rewardTypeName} (рейтинг ±${offer.level})</button><br>`;
+                }
+            }
+            html += `</div>`;
+        } else {
+            html += `<p>Нет активных заданий. Обновление через ${Math.max(0, Math.ceil((window.lastContrabandUpdate + CONFIG.CONTRABAND_MISSION_COOLDOWN - Date.now()) / 1000 / 60))} минут.</p>`;
+        }
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}<div class="modal-buttons"><button id="closeContrabandBtn">Закрыть</button></div></div>`;
+        document.body.appendChild(win);
+        win.querySelector("#sellMineralsBtn").onclick = () => { sellMinerals(); win.remove(); };
+        win.querySelectorAll(".takeContrabandOfferDockBtn").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.offer);
+                takeContrabandOffer(idx);
+                win.remove();
+                showContrabandModal();
+            };
+        });
+        win.querySelector("#closeContrabandBtn").onclick = () => win.remove();
+    }
+
+    function showArtifactMarketModal() {
+        let html = `<h3>🏺 РЫНОК АРТЕФАКТОВ</h3>`;
+        html += `<div class="balance-panel"><h4>Ваш счёт от продаж: ${player.artifactSalesBalance}💰</h4><button id="withdrawSalesBtn">Забрать прибыль</button></div>`;
+        html += `<div class="trade-row"><h4>Ваши артефакты:</h4>`;
+        for (let a of player.artifacts) {
+            const art = ARTIFACTS[a.id];
+            const avgPrice = window.artifactPriceHistory[a.id] ? Math.floor(window.artifactPriceHistory[a.id].totalSum / window.artifactPriceHistory[a.id].count) : art.basePrice;
+            html += `<div class="artifact-market-item">${art.name} x${a.count} (осталось ${a.usesLeft} зарядов) | Средняя цена: ${avgPrice}💰<br><input type="number" id="price_${a.id}" placeholder="Цена" min="1000" step="1000" value="${avgPrice}"> <button class="sellArtifactBtn" data-id="${a.id}" data-uses="${a.usesLeft}">Выставить на продажу</button></div>`;
+        }
+        html += `</div><div class="trade-row"><h4>Доступные артефакты на рынке:</h4>`;
+        if (artifactMarket.length === 0) html += "<p>Нет артефактов в продаже.</p>";
+        for (let i = 0; i < artifactMarket.length; i++) {
+            const offer = artifactMarket[i];
+            const art = ARTIFACTS[offer.artifactId];
+            const seller = offer.sellerIsPlayer ? "Вы" : (window.bots?.find(b => b.id === offer.sellerId)?.name || "Бот");
+            html += `<div class="artifact-market-item">${art.name} (осталось ${offer.usesLeft} зарядов) — Цена: ${offer.price}💰 (продавец: ${seller}) <button class="buyArtifactBtn" data-index="${i}">Купить</button>`;
+            if (offer.sellerIsPlayer) html += ` <button class="cancelArtifactBtn" data-index="${i}">Снять с продажи</button>`;
+            html += `</div>`;
+        }
+        html += `<div class="modal-buttons"><button id="closeMarketBtn">Закрыть</button></div>`;
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}</div>`;
+        document.body.appendChild(win);
+        win.querySelector("#withdrawSalesBtn").onclick = () => { withdrawArtifactSales(player, true); win.remove(); showArtifactMarketModal(); };
+        win.querySelectorAll(".sellArtifactBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                const uses = parseInt(btn.dataset.uses);
+                const priceInput = win.querySelector(`#price_${id}`);
+                const price = parseInt(priceInput.value);
+                if (isNaN(price) || price < 1000) { alert("Введите корректную цену (минимум 1000💰)"); return; }
+                const artifact = player.artifacts.find(a => a.id === id && a.usesLeft === uses);
+                if (!artifact) return;
+                if (artifact.count > 1) artifact.count--;
+                else {
+                    const idx = player.artifacts.findIndex(a => a.id === id && a.usesLeft === uses);
+                    if (idx !== -1) player.artifacts.splice(idx, 1);
+                }
+                listArtifactForSale(id, uses, price, "player", true);
+                win.remove();
+                showArtifactMarketModal();
+            };
+        });
+        win.querySelectorAll(".buyArtifactBtn").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.index);
+                if (buyArtifact(idx, player, true, "Вы")) {
+                    win.remove();
+                    showArtifactMarketModal();
+                    updateUI();
+                } else alert("Недостаточно кредитов или артефакт уже продан.");
+            };
+        });
+        win.querySelectorAll(".cancelArtifactBtn").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.index);
+                cancelArtifactSale(idx, true);
+                win.remove();
+                showArtifactMarketModal();
+            };
+        });
+        win.querySelector("#closeMarketBtn").onclick = () => win.remove();
+    }
+
+    function showComponentMarketModal() {
+        let html = `<h3>⚙️ ЧЁРНЫЙ РЫНОК (компоненты)</h3>`;
+        html += `<div class="balance-panel"><h4>Ваш счёт от продаж: ${player.artifactSalesBalance}💰</h4><button id="withdrawSalesBtn2">Забрать прибыль</button></div>`;
+        html += `<div class="trade-row"><h4>Ваши компоненты:</h4>`;
+        for (let c of COMPONENTS) {
+            const qty = player.components[c.id] || 0;
+            if (qty > 0) {
+                const avgPrice = getAverageComponentPrice(c.id);
+                html += `<div class="component-market-item">${c.name} x${qty} | Средняя цена: ${avgPrice}💰<br><input type="number" id="price_${c.id}" placeholder="Цена" min="500" step="500" value="${avgPrice}"> <button class="sellComponentBtn" data-id="${c.id}">Продать 1</button> <button class="sellAllComponentBtn" data-id="${c.id}">Продать все</button></div>`;
+            }
+        }
+        html += `</div><div class="trade-row"><h4>Доступные компоненты на рынке:</h4>`;
+        if (componentMarket.length === 0) html += "<p>Нет компонентов в продаже.</p>";
+        for (let i = 0; i < componentMarket.length; i++) {
+            const offer = componentMarket[i];
+            const comp = COMPONENTS.find(c => c.id === offer.componentId);
+            const seller = offer.sellerIsPlayer ? "Вы" : (window.bots?.find(b => b.id === offer.sellerId)?.name || "Бот");
+            html += `<div class="component-market-item">${comp.name} — Цена: ${offer.price}💰 (продавец: ${seller}) <button class="buyComponentBtn" data-index="${i}">Купить</button>`;
+            if (offer.sellerIsPlayer) html += ` <button class="cancelComponentBtn" data-index="${i}">Снять с продажи</button>`;
+            html += `</div>`;
+        }
+        html += `<div class="modal-buttons"><button id="closeComponentMarketBtn">Закрыть</button></div>`;
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}</div>`;
+        document.body.appendChild(win);
+        win.querySelector("#withdrawSalesBtn2").onclick = () => { withdrawArtifactSales(player, true); win.remove(); showComponentMarketModal(); };
+        win.querySelectorAll(".sellComponentBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                const priceInput = win.querySelector(`#price_${id}`);
+                const price = parseInt(priceInput.value);
+                if (isNaN(price) || price < 500) { alert("Введите корректную цену (минимум 500💰)"); return; }
+                if (player.components[id] < 1) return;
+                player.components[id]--;
+                listComponentForSale(id, price, "player", true);
+                win.remove();
+                showComponentMarketModal();
+            };
+        });
+        win.querySelectorAll(".sellAllComponentBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                const priceInput = win.querySelector(`#price_${id}`);
+                const price = parseInt(priceInput.value);
+                if (isNaN(price) || price < 500) { alert("Введите корректную цену (минимум 500💰)"); return; }
+                const qty = player.components[id];
+                if (qty === 0) return;
+                for (let i = 0; i < qty; i++) listComponentForSale(id, price, "player", true);
+                player.components[id] = 0;
+                win.remove();
+                showComponentMarketModal();
+            };
+        });
+        win.querySelectorAll(".buyComponentBtn").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.index);
+                if (buyComponent(idx, player, true, "Вы")) {
+                    win.remove();
+                    showComponentMarketModal();
+                    updateUI();
+                } else alert("Недостаточно кредитов или компонент уже продан.");
+            };
+        });
+        win.querySelectorAll(".cancelComponentBtn").forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.index);
+                cancelComponentSale(idx, true);
+                win.remove();
+                showComponentMarketModal();
+            };
+        });
+        win.querySelector("#closeComponentMarketBtn").onclick = () => win.remove();
+    }
+
+    function showCraftModal() {
+        let html = `<h3>🔧 МЕХАНИК</h3>`;
+        html += `<div class="trade-row"><h4>Доступные чертежи модулей (500 ТМ):</h4>`;
+        for (let [id, bp] of Object.entries(MODULE_BLUEPRINTS)) {
+            const owned = moduleBlueprintsOwned.includes(id);
+            html += `<div class="craft-item">${bp.name} ${owned ? "(есть)" : ""} ${!owned && player.darkMatter >= 500 ? `<button class="buyBlueprintBtn" data-id="${id}">Купить за 500🌑 ТМ</button>` : ""}</div>`;
+        }
+        html += `</div><div class="trade-row"><h4>Доступные чертежи улучшений (100 СС):</h4>`;
+        for (let [id, up] of Object.entries(UPGRADE_RECIPES)) {
+            const owned = upgradeBlueprintsOwned.includes(id);
+            html += `<div class="craft-item">${up.name} ${owned ? "(есть)" : ""} ${!owned && player.strangePower >= 100 ? `<button class="buyUpgradeBlueprintBtn" data-id="${id}">Купить за 100🌀 СС</button>` : ""}</div>`;
+        }
+        html += `</div><div class="trade-row"><h4>Создание модуля (нужно по 5 каждого компонента):</h4>`;
+        for (let [id, bp] of Object.entries(MODULE_BLUEPRINTS)) {
+            if (moduleBlueprintsOwned.includes(id)) {
+                html += `<div class="craft-item">${bp.name} <button class="craftModuleBtn" data-id="${id}">Создать</button></div>`;
+            }
+        }
+        html += `</div><div class="trade-row"><h4>Создание улучшения (требуются компоненты):</h4>`;
+        for (let [id, up] of Object.entries(UPGRADE_RECIPES)) {
+            if (upgradeBlueprintsOwned.includes(id)) {
+                const req = Object.entries(up.components).map(([cid, qty]) => `${COMPONENTS.find(c=>c.id===cid).name} x${qty}`).join(", ");
+                html += `<div class="craft-item">${up.name} (нужно: ${req}) <button class="craftUpgradeBtn" data-id="${id}">Создать</button></div>`;
+            }
+        }
+        html += `</div><div class="trade-row"><h4>Очередь крафта (1 минута на каждый):</h4>`;
+        if (player.craftingQueue.length === 0) html += "<p>Нет активного крафта.</p>";
+        for (let craft of player.craftingQueue) {
+            const name = craft.isUpgrade ? UPGRADE_RECIPES[craft.type].name : MODULE_BLUEPRINTS[craft.type].name;
+            const remaining = Math.max(0, 60 - Math.floor((Date.now() - craft.timestamp) / 1000));
+            html += `<div class="craft-progress">${name} — осталось ${remaining} сек.</div>`;
+        }
+        html += `</div><div class="trade-row"><h4>Ваши модули и улучшения:</h4>`;
+        for (let mod of player.ownedModules) {
+            const name = mod.isUpgrade ? UPGRADE_RECIPES[mod.type].name : MODULE_BLUEPRINTS[mod.type].name;
+            html += `<div class="module-inventory-item">${name} ${mod.isUpgrade ? `уровень ${mod.level}` : `количество ${mod.count}`} <button class="installModuleBtn" data-type="${mod.type}" data-upgrade="${mod.isUpgrade}">Установить (5000💰)</button> <button class="uninstallModuleBtn" data-type="${mod.type}">Снять (5000💰)</button></div>`;
+        }
+        html += `<div class="modal-buttons"><button id="closeCraftBtn">Закрыть</button></div>`;
+        const win = document.createElement("div"); win.className = "modal";
+        win.innerHTML = `<div class="modal-content">${html}</div>`;
+        document.body.appendChild(win);
+        win.querySelectorAll(".buyBlueprintBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                if (buyBlueprint(player, id, false, true)) { win.remove(); showCraftModal(); updateUI(); }
+                else alert("Недостаточно ТМ или уже есть чертёж.");
+            };
+        });
+        win.querySelectorAll(".buyUpgradeBlueprintBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                if (buyBlueprint(player, id, true, true)) { win.remove(); showCraftModal(); updateUI(); }
+                else alert("Недостаточно Силы Странника или уже есть чертёж.");
+            };
+        });
+        win.querySelectorAll(".craftModuleBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                if (startCraft(player, id, false, true)) { win.remove(); showCraftModal(); updateUI(); }
+            };
+        });
+        win.querySelectorAll(".craftUpgradeBtn").forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.dataset.id;
+                if (startCraft(player, id, true, true)) { win.remove(); showCraftModal(); updateUI(); }
+            };
+        });
+        win.querySelectorAll(".installModuleBtn").forEach(btn => {
+            btn.onclick = () => {
+                const type = btn.dataset.type;
+                const isUpgrade = btn.dataset.upgrade === "true";
+                if (installModule(player, type, isUpgrade, true)) { win.remove(); showCraftModal(); updateUI(); }
+            };
+        });
+        win.querySelectorAll(".uninstallModuleBtn").forEach(btn => {
+            btn.onclick = () => {
+                const type = btn.dataset.type;
+                if (uninstallModule(player, type, true)) { win.remove(); showCraftModal(); updateUI(); }
+            };
+        });
+        win.querySelector("#closeCraftBtn").onclick = () => win.remove();
+    }
+
+    // Назначаем обработчики кнопок дока
     modal.querySelector("#dockShopBtn").onclick = () => openShipShopModal();
     modal.querySelector("#dockCollectAllBtn").onclick = () => { collectAllPlanetResources(true, player); saveGame(); updateUI(); updateDockLog(); };
     modal.querySelector("#dockTeleportBtn").onclick = () => showTeleportModal();
@@ -579,8 +906,8 @@ export function updateRankingModal() {
     ];
     all.sort((a, b) => b.level - a.level || b.wins - a.wins);
     let html = `<table class="info-table"><thead><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></thead><tbody>`;
-    all.forEach(p => html += `<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power * 100) / 100}</td><td>${p.wins}</td></tr>`);
-    html += `</tbody></table><p>Всего ботов: ${window.bots.length}</p>`;
+    all.forEach(p => html += `专栏<td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power * 100) / 100}</td><td>${p.wins}</td><tr>`);
+    html += `</tbody>${'</table>'}<p>Всего ботов: ${window.bots.length}</p>`;
     const modal = document.createElement("div"); modal.className = "modal";
     modal.innerHTML = `<div class="modal-content"><h2>🏆 РЕЙТИНГ ПИЛОТОВ</h2>${html}<div class="modal-buttons"><button id="closeRankingBtn">Закрыть</button></div></div>`;
     document.body.appendChild(modal);
@@ -592,8 +919,8 @@ export function showInfoModal() {
     const modal = document.createElement("div"); modal.className = "modal";
     let html = `<div class="modal-content" style="max-width:900px;"><h2>📖 СПРАВОЧНИК ПИЛОТА</h2><div style="max-height:70vh; overflow-y:auto;">
         <div class="info-section"><h3>⭐ УРОВНИ</h3><p>Уровень повышается каждые 7 побед в бою. Формула: уровень = floor(победы/7) + 1. Максимальный уровень — 21.</p></div>
-        <div class="info-section"><h3>🛸 КОРАБЛИ</h3><table class="info-table">`;
-    for (let i = 1; i <= 21; i++) { const s = SHIPS[i-1]; html += `专栏<th>${s.level}</th><th>${s.name}</th><th>${s.power}</th><th>${s.cargo}</th><th>${s.fuelCap}</th><th>${Math.floor(s.cost)}</th><th>${s.tmCost || 0}</th></tr>`; }
+        <div class="info-section"><h3>🛸 КОРАБЛИ</h3><table class="info-table"><tr><th>Ур.</th><th>Название</th><th>Сила</th><th>Груз</th><th>Бак</th><th>Цена (💰)</th><th>ТМ (🌑)</th></tr>`;
+    for (let i = 1; i <= 21; i++) { const s = SHIPS[i-1]; html += `<tr><td>${s.level}</td><td>${s.name}</td><td>${s.power}</td><td>${s.cargo}</td><td>${s.fuelCap}</td><td>${Math.floor(s.cost)}</td><td>${s.tmCost || 0}</td></tr>`; }
     html += `</table><p>При покупке корабля все установленные модули сбрасываются. Для кораблей 5+ уровня требуется также Тёмная материя.</p></div>
         <div class="info-section"><h3>✨ АРТЕФАКТЫ</h3><table class="info-table"><tr><th>Название</th><th>Эффект</th><th>Использований</th></tr>`;
     for (let [id, art] of Object.entries(ARTIFACTS)) html += `<tr><td>${art.name}</td><td>${art.desc}</td><td>${art.uses}</td></tr>`;
@@ -617,4 +944,5 @@ export function showInfoModal() {
 }
 
 // ======================= ЭКСПОРТ ВСЕХ НУЖНЫХ ФУНКЦИЙ =======================
+// (Никакого дублирования – только один экспорт в конце)
 export { updateUI, openPlanetMenu, openDock, openShipShopModal, updateRankingModal, showInfoModal, exitDockToRandom };
