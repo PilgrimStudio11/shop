@@ -1,8 +1,8 @@
-// ui.js – отрисовка интерфейса, модальные окна, обновление панелей
+// ui.js – полная версия, без сокращений
 
 import { CONFIG, GOODS, MINERALS, ARTIFACTS, SHIPS, MODULE_BLUEPRINTS, UPGRADE_RECIPES, COMPONENTS } from './config.js';
 import { player, getShip, getTotalPower, getOptimizerCost, getDockCost, getTMHarvestBonus, getSSGeneratorBonus, addArtifact, useArtifact, hasArtifact } from './player.js';
-import { addLogToGame, gameLog, saveGame, randomRange } from './utils.js';
+import { addLogToGame, saveGame, randomRange } from './utils.js';
 import { currentMission, missionCompleted, onBuyGood, onSellGood, generateMission, sellMinerals } from './trade.js';
 import { planetOwners, planetPrevOwnersCount, planetIncome, planetTM, planetMinerIncome, planetModules, getPlanetMaxStorage, getPlanetStorageUpgradeCost, getPlanetIncomePercent, getPlanetPrice, canBuyPlanet, buyPlanet, installPlanetModule, upgradePlanetStorage, addIncomeToPlanet, collectAllPlanetResources } from './planets.js';
 import { activeContrabandOffers, takeContrabandOffer, takeContrabandCargo, deliverContraband } from './contraband.js';
@@ -10,42 +10,24 @@ import { moduleBlueprintsOwned, upgradeBlueprintsOwned, buyBlueprint, startCraft
 import { artifactMarket, componentMarket, getAverageComponentPrice, listComponentForSale, buyComponent, cancelComponentSale, listArtifactForSale, buyArtifact, cancelArtifactSale, withdrawArtifactSales } from './market.js';
 import { getEntityPower } from './combat.js';
 
-// ======================= ОБНОВЛЕНИЕ ИНТЕРФЕЙСА =======================
+// ----------------------------------------------------------------------
+// Обновление интерфейса
+// ----------------------------------------------------------------------
 export function updateUI() {
     const ship = getShip();
-    const elements = {
-        shipName: document.getElementById("shipName"),
-        powerVal: document.getElementById("powerVal"),
-        hullVal: document.getElementById("hullVal"),
-        creditsVal: document.getElementById("creditsVal"),
-        fuelVal: document.getElementById("fuelVal"),
-        maxFuelVal: document.getElementById("maxFuelVal"),
-        strangePowerVal: document.getElementById("strangePowerVal"),
-        darkMatterVal: document.getElementById("darkMatterVal"),
-        levelVal: document.getElementById("levelVal"),
-        winsVal: document.getElementById("winsVal"),
-        missionsCompletedVal: document.getElementById("missionsCompletedVal"),
-        contrabandRatingVal: document.getElementById("contrabandRatingVal"),
-        currentPlanetName: document.getElementById("currentPlanetName"),
-        cargoDisplay: document.getElementById("cargoDisplay"),
-        componentsDisplay: document.getElementById("componentsDisplay"),
-        artifactDisplay: document.getElementById("artifactDisplay"),
-        activeEffects: document.getElementById("activeEffects"),
-        missionText: document.getElementById("missionText")
-    };
-    if (elements.shipName) elements.shipName.innerText = ship.name;
-    if (elements.powerVal) elements.powerVal.innerText = getTotalPower().toFixed(2);
-    if (elements.hullVal) elements.hullVal.innerText = Math.floor(player.hull);
-    if (elements.creditsVal) elements.creditsVal.innerText = Math.floor(player.credits);
-    if (elements.fuelVal) elements.fuelVal.innerText = player.fuel;
-    if (elements.maxFuelVal) elements.maxFuelVal.innerText = ship.fuelCap;
-    if (elements.strangePowerVal) elements.strangePowerVal.innerText = player.strangePower;
-    if (elements.darkMatterVal) elements.darkMatterVal.innerText = player.darkMatter;
-    if (elements.levelVal) elements.levelVal.innerText = player.level;
-    if (elements.winsVal) elements.winsVal.innerText = player.wins;
-    if (elements.missionsCompletedVal) elements.missionsCompletedVal.innerText = player.missionsCompleted;
-    if (elements.contrabandRatingVal) elements.contrabandRatingVal.innerText = player.contrabandRating;
-    if (elements.currentPlanetName) elements.currentPlanetName.innerHTML = `Планета #${player.currentPlanet}`;
+    document.getElementById("shipName").innerText = ship.name;
+    document.getElementById("powerVal").innerText = getTotalPower().toFixed(2);
+    document.getElementById("hullVal").innerText = Math.floor(player.hull);
+    document.getElementById("creditsVal").innerText = Math.floor(player.credits);
+    document.getElementById("fuelVal").innerText = player.fuel;
+    document.getElementById("maxFuelVal").innerText = ship.fuelCap;
+    document.getElementById("strangePowerVal").innerText = player.strangePower;
+    document.getElementById("darkMatterVal").innerText = player.darkMatter;
+    document.getElementById("levelVal").innerText = player.level;
+    document.getElementById("winsVal").innerText = player.wins;
+    document.getElementById("missionsCompletedVal").innerText = player.missionsCompleted;
+    document.getElementById("contrabandRatingVal").innerText = player.contrabandRating;
+    document.getElementById("currentPlanetName").innerHTML = `Планета #${player.currentPlanet}`;
 
     // Груз
     let cargoHtml = '';
@@ -57,7 +39,7 @@ export function updateUI() {
         const qty = player.cargo[m.id] || 0;
         if (qty > 0) cargoHtml += `<div class="cargo-item">${m.name}: ${qty}</div>`;
     }
-    if (elements.cargoDisplay) elements.cargoDisplay.innerHTML = cargoHtml || '<div class="cargo-item">Пусто</div>';
+    document.getElementById("cargoDisplay").innerHTML = cargoHtml || '<div class="cargo-item">Пусто</div>';
 
     // Компоненты
     let compHtml = '';
@@ -65,7 +47,8 @@ export function updateUI() {
         const qty = player.components[c.id] || 0;
         if (qty > 0) compHtml += `<div class="component-item">${c.name}: ${qty}</div>`;
     }
-    if (elements.componentsDisplay) elements.componentsDisplay.innerHTML = compHtml || '<div class="component-item">Нет компонентов</div>';
+    const compDisplay = document.getElementById("componentsDisplay");
+    if (compDisplay) compDisplay.innerHTML = compHtml || '<div class="component-item">Нет компонентов</div>';
 
     // Артефакты
     let artifactHtml = '';
@@ -73,7 +56,7 @@ export function updateUI() {
         const art = ARTIFACTS[a.id];
         artifactHtml += `<div class="artifact-item" data-artifact="${a.id}" data-uses="${a.usesLeft}" data-count="${a.count}">✨ ${art.name} x${a.count} (осталось ${a.usesLeft} зарядов)</div>`;
     }
-    if (elements.artifactDisplay) elements.artifactDisplay.innerHTML = artifactHtml || '';
+    document.getElementById("artifactDisplay").innerHTML = artifactHtml || '';
     document.querySelectorAll(".artifact-item").forEach(el => {
         el.onclick = () => {
             if (activateArtifact(el.dataset.artifact)) {
@@ -92,7 +75,7 @@ export function updateUI() {
     if (player.hasTMHarvester) effectsHtml += `<div class="stat">⛏️ Добытчик ТМ (уровень ${player.tmHarvesterLevel})</div>`;
     if (player.hasSSGenerator) effectsHtml += `<div class="stat">⚡ Генератор СС (уровень ${player.ssGeneratorLevel})</div>`;
     if (player.hasOptimizer) effectsHtml += `<div class="stat">🚀 Оптимизатор (уровень ${player.optimizerLevel})</div>`;
-    if (elements.activeEffects) elements.activeEffects.innerHTML = effectsHtml || '';
+    document.getElementById("activeEffects").innerHTML = effectsHtml || '';
 
     // Задание
     let missionText = "Нет активного задания";
@@ -101,7 +84,7 @@ export function updateUI() {
     } else if (currentMission && currentMission.completed) {
         missionText = "✅ Задание выполнено.";
     }
-    if (elements.missionText) elements.missionText.innerText = missionText;
+    document.getElementById("missionText").innerText = missionText;
 }
 
 function activateArtifact(artifactId) {
@@ -178,7 +161,9 @@ function activateArtifact(artifactId) {
     return true;
 }
 
-// ======================= ПЛАНЕТА (торговля, модули, контрабанда) =======================
+// ----------------------------------------------------------------------
+// Планета (торговля, модули, контрабанда)
+// ----------------------------------------------------------------------
 export function openPlanetMenu(planetNumber) {
     const modal = document.createElement("div");
     modal.className = "modal";
@@ -364,7 +349,9 @@ export function openPlanetMenu(planetNumber) {
     modal.querySelector("#closePlanetMenu").onclick = () => modal.remove();
 }
 
-// ======================= ДОК =======================
+// ----------------------------------------------------------------------
+// Док
+// ----------------------------------------------------------------------
 export function openDock(restore = false) {
     const dockCost = getDockCost();
     if (!restore && player.strangePower < dockCost) {
@@ -419,7 +406,7 @@ export function openDock(restore = false) {
     }
     updateDockLog();
 
-    // ---- ВНУТРЕННИЕ МОДАЛЬНЫЕ ОКНА ДОКА ----
+    // Внутренние модальные окна
     function showMyPlanetsModal() {
         const owned = [];
         for (let i = 0; i < CONFIG.PLANET_COUNT; i++) if (planetOwners[i] === "player") owned.push(i);
@@ -790,7 +777,10 @@ export function openDock(restore = false) {
     };
 }
 
-export function exitDockToRandom() {
+// ----------------------------------------------------------------------
+// Выход из дока
+// ----------------------------------------------------------------------
+function exitDockToRandom() {
     player.inDock = false;
     player.dockEnterTime = 0;
     player.currentPlanet = randomRange(1, CONFIG.PLANET_COUNT);
@@ -799,7 +789,9 @@ export function exitDockToRandom() {
     addLogToGame(`Вы покинули док и оказались на планете #${player.currentPlanet}.`, "success", true);
 }
 
-// ======================= МАГАЗИН КОРАБЛЕЙ =======================
+// ----------------------------------------------------------------------
+// Магазин кораблей
+// ----------------------------------------------------------------------
 export function openShipShopModal() {
     const shopDiv = document.getElementById("shopPanel");
     shopDiv.classList.remove("hidden");
@@ -898,7 +890,9 @@ function renderShopTab(tab) {
     }
 }
 
-// ======================= РЕЙТИНГ =======================
+// ----------------------------------------------------------------------
+// Рейтинг
+// ----------------------------------------------------------------------
 export function updateRankingModal() {
     const all = [
         { name: "⭐ ВЫ", level: player.level, power: getTotalPower(), wins: player.wins },
@@ -906,15 +900,17 @@ export function updateRankingModal() {
     ];
     all.sort((a, b) => b.level - a.level || b.wins - a.wins);
     let html = `<table class="info-table"><thead><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></thead><tbody>`;
-    all.forEach(p => html += `专栏<td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power * 100) / 100}</td><td>${p.wins}</td><tr>`);
-    html += `</tbody>${'</table>'}<p>Всего ботов: ${window.bots.length}</p>`;
+    all.forEach(p => html += `专栏<td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power * 100) / 100}</td><td>${p.wins}</td></tr>`);
+    html += `</tbody></table><p>Всего ботов: ${window.bots.length}</p>`;
     const modal = document.createElement("div"); modal.className = "modal";
     modal.innerHTML = `<div class="modal-content"><h2>🏆 РЕЙТИНГ ПИЛОТОВ</h2>${html}<div class="modal-buttons"><button id="closeRankingBtn">Закрыть</button></div></div>`;
     document.body.appendChild(modal);
     modal.querySelector("#closeRankingBtn").onclick = () => modal.remove();
 }
 
-// ======================= ИНФОРМАЦИЯ =======================
+// ----------------------------------------------------------------------
+// Информация
+// ----------------------------------------------------------------------
 export function showInfoModal() {
     const modal = document.createElement("div"); modal.className = "modal";
     let html = `<div class="modal-content" style="max-width:900px;"><h2>📖 СПРАВОЧНИК ПИЛОТА</h2><div style="max-height:70vh; overflow-y:auto;">
@@ -943,6 +939,7 @@ export function showInfoModal() {
     modal.querySelector("#closeInfoBtn").onclick = () => modal.remove();
 }
 
-// ======================= ЭКСПОРТ ВСЕХ НУЖНЫХ ФУНКЦИЙ =======================
-// (Никакого дублирования – только один экспорт в конце)
+// ----------------------------------------------------------------------
+// Единый экспорт всех нужных функций
+// ----------------------------------------------------------------------
 export { updateUI, openPlanetMenu, openDock, openShipShopModal, updateRankingModal, showInfoModal, exitDockToRandom };
